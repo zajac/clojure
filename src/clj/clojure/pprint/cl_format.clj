@@ -111,7 +111,7 @@ http://www.lispworks.com/documentation/HyperSpec/Body/22_c.htm
 
 (defn- absolute-reposition [navigator position]
   (if (>= position (:pos navigator))
-    (relative-reposition navigator (- (:pos navigator) position))
+    (relative-reposition navigator (- position (:pos navigator)))
     (struct arg-navigator (:seq navigator) (drop position (:seq navigator)) position)))
 
 (defn- relative-reposition [navigator position]
@@ -174,9 +174,9 @@ http://www.lispworks.com/documentation/HyperSpec/Body/22_c.htm
                     (opt-base-str *print-base* n)))
     (ratio? n) (str
                 (if *print-radix* (or (get special-radix-markers *print-base*) (str "#" *print-base* "r")))
-                (opt-base-str *print-base* (.numerator n))
+                (opt-base-str *print-base* (.numerator ^clojure.lang.Ratio n))
                 "/"
-                (opt-base-str *print-base* (.denominator n)))
+                (opt-base-str *print-base* (.denominator ^clojure.lang.Ratio n)))
     :else nil))
 
 (defn- format-ascii [print-func params arg-navigator offsets]
@@ -681,7 +681,7 @@ string, or one character longer."
         append-zero (and (not d) (<= (dec (count mantissa)) scaled-exp))
         [rounded-mantissa scaled-exp expanded] (round-str mantissa scaled-exp 
                                                           d (if w (- w (if add-sign 1 0))))
-        fixed-repr (get-fixed rounded-mantissa (if expanded (inc scaled-exp) scaled-exp) d)
+        ^String fixed-repr (get-fixed rounded-mantissa (if expanded (inc scaled-exp) scaled-exp) d)
         fixed-repr (if (and w d
                             (>= d 1)
                             (= (.charAt fixed-repr 0) \0)
@@ -1471,14 +1471,15 @@ not a pretty writer (which keeps track of columns), this function always outputs
      #(absolute-tabulation %1 %2 %3)))
 
   (\* 
-   [ :n [1 Integer] ] 
+   [ :n [nil Integer] ] 
    #{ :colon :at } {}
-   (fn [params navigator offsets]
-     (let [n (:n params)]
-       (if (:at params)
-         (absolute-reposition navigator n)
-         (relative-reposition navigator (if (:colon params) (- n) n)))
-       )))
+   (if (:at params)
+     (fn [params navigator offsets]
+       (let [n (or (:n params) 0)] ; ~@* has a default n = 0
+         (absolute-reposition navigator n)))
+     (fn [params navigator offsets]
+       (let [n (or (:n params) 1)] ; whereas ~* and ~:* have a default n = 1
+         (relative-reposition navigator (if (:colon params) (- n) n))))))
 
   (\? 
    [ ] 

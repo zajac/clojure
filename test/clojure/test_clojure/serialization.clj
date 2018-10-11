@@ -43,7 +43,9 @@
         rt-seq (-> v seq serialize deserialize)]
     (and (= v rt)
       (= (seq v) (seq rt))
-      (= (seq v) rt-seq))))
+      (= (seq v) rt-seq)
+      (= (hash v) (hash rt))
+      (= (.hashCode v) (.hashCode rt)))))
 
 (deftest sequable-serialization
   (are [val] (roundtrip val)
@@ -89,13 +91,13 @@
 
     ; lazy seqs
     (lazy-seq nil)
-    (lazy-seq (range 50))
+    (lazy-seq (list* (range 50)))
 
     ; transient / persistent! round-trip
     (build-via-transient [])
     (build-via-transient {})
     (build-via-transient #{})
-    
+
     ; array-seqs
     (seq (make-array Object 10))
     (seq (make-array Boolean/TYPE 10))
@@ -113,7 +115,12 @@
     ; misc seqs
     (seq "s11n")
     (range 50)
-    (rseq (apply sorted-set (reverse (range 100))))))
+    (rseq (apply sorted-set (reverse (range 100))))
+
+    ;; partially realized chunked range
+    (let [r (range 50)]
+      (nth r 35)
+      r)))
 
 (deftest misc-serialization
   (are [v] (= v (-> v serialize deserialize))
@@ -122,13 +129,35 @@
     ::namespaced-keyword
     'symbol))
 
+(deftest tostringed-bytes
+  (let [rt #(-> % serialize seq)
+        s1 (rt 'sym123)
+        k1 (rt :kw123)
+        _ (.toString 'sym123)
+        _ (.toString :kw123)
+        s2 (rt 'sym123)
+        k2 (rt :kw123)]
+    (is (= s1 s2))
+    (is (= k1 k2))))
+
 (deftest interned-serializations
   (are [v] (identical? v (-> v serialize deserialize))
     clojure.lang.RT/DEFAULT_COMPARATOR
-    
+
     ; namespaces just get deserialized back into the same-named ns in the present runtime
     ; (they're referred to by defrecord instances)
-    *ns*))
+    *ns*
+
+    ; vars get serialized back into the same var in the present runtime
+    #'clojure.core/conj))
+
+(deftest new-var-unbound-on-read
+  (let [v (intern 'user 'foobarbaz 10)
+        sv (serialize v)]
+    (ns-unmap 'user 'foobarbaz) ;; unmap #'user.V
+    (let [v2 (deserialize sv)] ;; deserialize re-interns var
+      ;; but it is unbound
+      (is (not (.hasRoot v2))))))
 
 (deftest function-serialization
   (let [capture 5]
@@ -151,7 +180,6 @@
     (atom nil)
     (ref nil)
     (agent nil)
-    #'+
 
     ;; stateful seqs
     (enumeration-seq (java.util.Collections/enumeration (range 50)))

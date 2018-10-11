@@ -12,8 +12,9 @@
        :author "Stephen C. Gilardi and Rich Hickey"}
   clojure.main
   (:refer-clojure :exclude [with-bindings])
+  (:require [clojure.spec.alpha :as spec])
   (:import (clojure.lang Compiler Compiler$CompilerException
-                         LineNumberingPushbackReader RT))
+                         LineNumberingPushbackReader RT LispReader$ReaderException))
   ;;(:use [clojure.repl :only (demunge root-cause stack-element-str)])
   )
 
@@ -53,6 +54,7 @@
   [^StackTraceElement el]
   (let [file (.getFileName el)
         clojure-fn? (and file (or (.endsWith file ".clj")
+                                  (.endsWith file ".cljc")
                                   (= file "NO_SOURCE_FILE")))]
     (str (if clojure-fn?
            (demunge (.getClassName el))
@@ -73,12 +75,14 @@
              *print-meta* *print-meta*
              *print-length* *print-length*
              *print-level* *print-level*
+             *print-namespace-maps* true
              *data-readers* *data-readers*
              *default-data-reader-fn* *default-data-reader-fn*
              *compile-path* (System/getProperty "clojure.compile.path" "classes")
              *command-line-args* *command-line-args*
              *unchecked-math* *unchecked-math*
              *assert* *assert*
+             clojure.spec.alpha/*explain-out* clojure.spec.alpha/*explain-out*
              *1 nil
              *2 nil
              *3 nil
@@ -136,7 +140,7 @@
   [request-prompt request-exit]
   (or ({:line-start request-prompt :stream-end request-exit}
        (skip-whitespace *in*))
-      (let [input (read)]
+      (let [input (read {:read-cond :allow} *in*)]
         (skip-if-eol *in*)
         input)))
 
@@ -145,17 +149,65 @@
   [throwable]
   (root-cause throwable))
 
+(defn- init-cause
+  "Returns initial root cause exception (deepest cause in the exception chain)."
+  ^Throwable [t]
+  (loop [^Throwable cause t]
+    (if-let [cause (.getCause cause)]
+      (recur cause)
+      cause)))
+
+(defn ex-str
+  "Returns a string from an exception for printing at the repl.
+  The first line summarizes data from the exception instance: phase, location,
+  cause message, etc. The subsequent lines contain ex-data info if available."
+  [^Throwable e]
+  (let [msg (.getMessage e)
+        cause (init-cause e)
+        tr (.getStackTrace cause)
+        el (when-not (zero? (count tr)) (aget tr 0))
+        top-data (ex-data e)
+        data (ex-data cause)]
+    (str
+      (case (:clojure.error/phase top-data)
+        :read
+        (if (instance? Compiler$CompilerException e)
+          (.toString e)
+          (format "%s. Cause: %s" (.getMessage e) (.getMessage (init-cause e))))
+
+        (:compile :macroexpand)
+        (.toString e)
+
+        :print
+        (format "Error printing return value at %s. %s %s"
+          (if el (stack-element-str el) "[trace missing]") ;; jvm may omit stack
+          (.. cause getClass getSimpleName)
+          (.getMessage cause))
+
+        ;; eval
+        (format "Evaluation error at %s. %s %s"
+          (if el (stack-element-str el) "[trace missing]") ;; jvm may omit stack
+          (.. cause getClass getSimpleName)
+          (.getMessage cause)))
+
+      (if data
+        (if (contains? data :clojure.spec.alpha/problems)
+          (format "%n%s"
+            (with-out-str
+              (spec/explain-out
+                (if (= spec/*explain-out* spec/explain-printer)
+                  (update-in data [:clojure.spec.alpha/problems]
+                    (fn [probs] (map #(dissoc % :in) probs)))
+                  data))))
+          (System/lineSeparator))
+        (System/lineSeparator)))))
+
 (defn repl-caught
   "Default :caught hook for repl"
   [e]
-  (let [ex (repl-exception e)
-        tr (.getStackTrace ex)
-        el (when-not (zero? (count tr)) (aget tr 0))]
-    (binding [*out* *err*]
-      (println (str (-> ex class .getSimpleName)
-                    " " (.getMessage ex) " "
-                    (when-not (instance? clojure.lang.Compiler$CompilerException ex)
-                      (str " " (if el (stack-element-str el) "[trace missing]"))))))))
+  (binding [*out* *err*]
+    (print (ex-str e))
+    (flush)))
 
 (def ^{:doc "A sequence of lib specs that are applied to `require`
 by default when a new command-line REPL is started."} repl-requires
@@ -234,13 +286,26 @@ by default when a new command-line REPL is started."} repl-requires
         (fn []
           (try
             (let [read-eval *read-eval*
-                  input (with-read-known (read request-prompt request-exit))]
+                  input (try
+                          (with-read-known (read request-prompt request-exit))
+                          (catch LispReader$ReaderException e
+                            (throw (ex-info
+                                     (str "Syntax error reading source at (" (.-line e) ":" (.-column e) ")")
+                                     {:clojure.error/phase :read
+                                      :clojure.error/line (.-line e)
+                                      :clojure.error/column (.-column e)}
+                                     e))))]
              (or (#{request-prompt request-exit} input)
                  (let [value (binding [*read-eval* read-eval] (eval input))]
-                   (print value)
                    (set! *3 *2)
                    (set! *2 *1)
-                   (set! *1 value))))
+                   (set! *1 value)
+                   (try
+                     (print value)
+                     (catch Throwable e
+                       (throw (ex-info (format "Error printing return value. Cause: " (.getMessage e))
+                                {:clojure.error/phase :print}
+                                e)))))))
            (catch Throwable e
              (caught e)
              (set! *e e))))]
@@ -392,7 +457,7 @@ java -cp clojure.jar clojure.main -i init.clj script.clj args...")
   main options:
     -m, --main ns-name  Call the -main function from a namespace with args
     -r, --repl          Run a repl
-    path                Run a script from from a file or resource
+    path                Run a script from a file or resource
     -                   Run a script from standard input
     -h, -?, --help      Print this help message and exit
 

@@ -32,12 +32,13 @@ cl-format, it supports very concise custom dispatch. It also provides
 a more powerful alternative to Clojure's standard format function.
 
 See documentation for pprint and cl-format for more information or 
-complete documentation on the the clojure web site on github.",
+complete documentation on the Clojure web site on GitHub.",
        :added "1.2"}
     clojure.pprint
     (:refer-clojure :exclude (deftype))
     (:use [clojure.walk :only [walk]]))
 
+(set! *warn-on-reflection* true)
 
 (load "pprint/utilities")
 (load "pprint/column_writer")

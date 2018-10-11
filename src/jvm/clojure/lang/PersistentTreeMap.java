@@ -16,13 +16,14 @@ import java.util.*;
 
 /**
  * Persistent Red Black Tree
- * Note that instances of this class are constant values
- * i.e. add/remove etc return new values
- * <p/>
- * See Okasaki, Kahrs, Larsen et al
+ *
+ * <p>Note that instances of this class are constant values
+ * i.e. add/remove etc return new values</p>
+ *
+ * <p>See Okasaki, Kahrs, Larsen et al</p>
  */
 
-public class PersistentTreeMap extends APersistentMap implements IObj, Reversible, Sorted{
+public class PersistentTreeMap extends APersistentMap implements IObj, Reversible, Sorted, IKVReduce{
 
 public final Comparator comp;
 public final Node tree;
@@ -46,6 +47,8 @@ public PersistentTreeMap(){
 }
 
 public PersistentTreeMap withMeta(IPersistentMap meta){
+	if(_meta == meta)
+		return this;
 	return new PersistentTreeMap(meta, comp, tree, _count);
 }
 
@@ -92,6 +95,22 @@ static public PersistentTreeMap create(Comparator comp, ISeq items){
 
 public boolean containsKey(Object key){
 	return entryAt(key) != null;
+}
+
+public boolean equals(Object obj){
+    try {
+        return super.equals(obj);
+    } catch (ClassCastException e) {
+        return false;
+    }
+}
+
+public boolean equiv(Object obj){
+    try {
+        return super.equiv(obj);
+    } catch (ClassCastException e) {
+        return false;
+    }
 }
 
 public PersistentTreeMap assocEx(Object key, Object val) {
@@ -315,6 +334,8 @@ public int doCompare(Object k1, Object k2){
 Node add(Node t, Object key, Object val, Box found){
 	if(t == null)
 		{
+		if(comp == RT.DEFAULT_COMPARATOR && !( key == null || (key instanceof Number) || (key instanceof Comparable)))
+			throw new ClassCastException("Default comparator requires nil, Number, or Comparable: " + key);
 		if(val == null)
 			return new Red(key);
 		return new RedVal(key, val);
@@ -829,6 +850,8 @@ static public class Seq extends ASeq{
 	}
 
 	public Obj withMeta(IPersistentMap meta){
+		if(meta() == meta)
+			return this;
 		return new Seq(meta, stack, asc, cnt);
 	}
 }
@@ -855,9 +878,13 @@ static public class NodeIterator implements Iterator{
 	}
 
 	public Object next(){
-		Node t = (Node) stack.pop();
-		push(asc ? t.right() : t.left());
-		return t;
+		try {
+			Node t = (Node) stack.pop();
+			push(asc ? t.right() : t.left());
+			return t;
+		} catch(EmptyStackException e) {
+			throw new NoSuchElementException();
+		}
 	}
 
 	public void remove(){

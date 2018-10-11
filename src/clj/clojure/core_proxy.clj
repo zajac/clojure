@@ -13,6 +13,7 @@
 (import
  '(clojure.asm ClassWriter ClassVisitor Opcodes Type) 
  '(java.lang.reflect Modifier Constructor)
+ '(java.io Serializable NotSerializableException)
  '(clojure.asm.commons Method GeneratorAdapter)
  '(clojure.lang IProxy Reflector DynamicClassLoader IPersistentMap PersistentHashMap RT))
 
@@ -23,8 +24,10 @@
   (or (some (fn [t] (when (every? #(isa? t %) rtypes) t)) rtypes)
     (throw (Exception. "Incompatible return types"))))
 
-(defn- group-by-sig [coll]
- "takes a collection of [msig meth] and returns a seq of maps from return-types to meths."
+(defn- group-by-sig
+  "Takes a collection of [msig meth] and returns a seq of maps from
+   return-types to meths."
+  [coll]
   (vals (reduce1 (fn [m [msig meth]]
                   (let [rtype (peek msig)
                         argsig (pop msig)]
@@ -44,7 +47,8 @@
 
 (defn- generate-proxy [^Class super interfaces]
   (let [cv (new ClassWriter (. ClassWriter COMPUTE_MAXS))
-        cname (.replace (proxy-name super interfaces) \. \/) ;(str "clojure/lang/" (gensym "Proxy__"))
+        pname (proxy-name super interfaces)
+        cname (.replace pname \. \/) ;(str "clojure/lang/" (gensym "Proxy__"))
         ctype (. Type (getObjectType cname))
         iname (fn [^Class c] (.. Type (getType c) (getInternalName)))
         fmap "__clojureFnMap"
@@ -148,6 +152,22 @@
             
             (. gen (returnValue))
             (. gen (endMethod)))))
+                                        ;disable serialization
+    (when (some #(isa? % Serializable) (cons super interfaces))
+      (let [m (. Method (getMethod "void writeObject(java.io.ObjectOutputStream)"))
+            gen (new GeneratorAdapter (. Opcodes ACC_PRIVATE) m nil nil cv)]
+        (. gen (visitCode))
+        (. gen (loadThis))
+        (. gen (loadArgs))
+        (. gen (throwException (totype NotSerializableException) pname))
+        (. gen (endMethod)))
+      (let [m (. Method (getMethod "void readObject(java.io.ObjectInputStream)"))
+            gen (new GeneratorAdapter (. Opcodes ACC_PRIVATE) m nil nil cv)]
+        (. gen (visitCode))
+        (. gen (loadThis))
+        (. gen (loadArgs))
+        (. gen (throwException (totype NotSerializableException) pname))
+        (. gen (endMethod))))
                                         ;add IProxy methods
     (let [m (. Method (getMethod "void __initClojureFnMappings(clojure.lang.IPersistentMap)"))
           gen (new GeneratorAdapter (. Opcodes ACC_PUBLIC) m nil nil cv)]
@@ -210,6 +230,12 @@
                          (for [^Class iface interfaces meth (. iface (getMethods))
                                :let [msig (method-sig meth)] :when (not (considered msig))]
                            {msig meth}))
+          ;; Treat abstract methods as interface methods
+          [mm ifaces-meths] (let [abstract? (fn [[_ ^Method meth]]
+                                              (Modifier/isAbstract (. meth (getModifiers))))
+                                  mm-no-abstract (remove abstract? mm)
+                                  abstract-meths (filter abstract? mm)]
+                              [mm-no-abstract (concat ifaces-meths abstract-meths)])
           mgroups (group-by-sig (concat mm ifaces-meths))
           rtypes (map #(most-specific (keys %)) mgroups)
           mb (map #(vector (%1 %2) (vals (dissoc %1 %2))) mgroups rtypes)
@@ -389,22 +415,24 @@
         snapshot (fn []
                    (reduce1 (fn [m e]
                              (assoc m (key e) ((val e))))
-                           {} (seq pmap)))]
+                           {} (seq pmap)))
+        thisfn (fn thisfn [plseq]
+                 (lazy-seq
+                   (when-let [pseq (seq plseq)]
+                     (cons (clojure.lang.MapEntry/create (first pseq) (v (first pseq)))
+                           (thisfn (rest pseq))))))]
     (proxy [clojure.lang.APersistentMap]
            []
+      (iterator [] (clojure.lang.SeqIterator. ^java.util.Iterator (thisfn (keys pmap))))
       (containsKey [k] (contains? pmap k))
-      (entryAt [k] (when (contains? pmap k) (new clojure.lang.MapEntry k (v k))))
+      (entryAt [k] (when (contains? pmap k) (clojure.lang.MapEntry/create k (v k))))
       (valAt ([k] (when (contains? pmap k) (v k)))
 	     ([k default] (if (contains? pmap k) (v k) default)))
       (cons [m] (conj (snapshot) m))
       (count [] (count pmap))
       (assoc [k v] (assoc (snapshot) k v))
       (without [k] (dissoc (snapshot) k))
-      (seq [] ((fn thisfn [plseq]
-		  (lazy-seq
-                   (when-let [pseq (seq plseq)]
-                     (cons (new clojure.lang.MapEntry (first pseq) (v (first pseq)))
-                           (thisfn (rest pseq)))))) (keys pmap))))))
+      (seq [] (thisfn (keys pmap))))))
 
 
 

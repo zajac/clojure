@@ -12,6 +12,7 @@ package clojure.lang;
 
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.NoSuchElementException;
 //import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
@@ -30,8 +31,8 @@ final int cnt;
 final ISeq f;
 final PersistentVector r;
 //static final int INITIAL_REAR_SIZE = 4;
-int _hash = -1;
-int _hasheq = -1;
+int _hash;
+int _hasheq;
 
 PersistentQueue(IPersistentMap meta, int cnt, ISeq f, PersistentVector r){
 	super(meta);
@@ -69,30 +70,32 @@ public boolean equals(Object obj){
 }
 
 public int hashCode(){
-	if(_hash == -1)
+    int hash = this._hash;
+	if(hash == 0)
 		{
-		int hash = 1;
+		hash = 1;
 		for(ISeq s = seq(); s != null; s = s.next())
 			{
 			hash = 31 * hash + (s.first() == null ? 0 : s.first().hashCode());
 			}
 		this._hash = hash;
 		}
-	return _hash;
+	return hash;
 }
 
 public int hasheq() {
-	if(_hasheq == -1)
-		{
+    int cached = this._hasheq;
+    if(cached == 0)
+    {
 //		int hash = 1;
 //		for(ISeq s = seq(); s != null; s = s.next())
 //			{
 //			hash = 31 * hash + Util.hasheq(s.first());
 //			}
 //		this._hasheq = hash;
-		_hasheq  = Murmur3.hashOrdered(this);
+		this._hasheq  = cached = Murmur3.hashOrdered(this);
 		}
-    return _hasheq;
+    return cached;
 }
 
 public Object peek(){
@@ -135,6 +138,8 @@ public IPersistentCollection empty(){
 }
 
 public PersistentQueue withMeta(IPersistentMap meta){
+	if(meta() == meta)
+		return this;
 	return new PersistentQueue(meta, cnt, f, r);
 }
 
@@ -175,6 +180,8 @@ static class Seq extends ASeq{
 	}
 
 	public Seq withMeta(IPersistentMap meta){
+		if(meta() == meta)
+			return this;
 		return new Seq(meta, f, rseq);
 	}
 }
@@ -240,7 +247,31 @@ public boolean contains(Object o){
 }
 
 public Iterator iterator(){
-	return new SeqIterator(seq());
+    return new Iterator(){
+        private ISeq fseq = f;
+        private final Iterator riter = r != null ? r.iterator() : null;
+
+        public boolean hasNext(){
+            return ((fseq != null && fseq.seq() != null) || (riter != null && riter.hasNext()));
+        }
+
+        public Object next(){
+            if(fseq != null)
+            {
+                Object ret = fseq.first();
+                fseq = fseq.next();
+                return ret;
+            }
+            else if(riter != null && riter.hasNext())
+                return riter.next();
+            else
+                throw new NoSuchElementException();
+        }
+
+        public void remove(){
+            throw new UnsupportedOperationException();
+        }
+    };
 }
 
 /*

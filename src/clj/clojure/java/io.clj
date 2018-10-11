@@ -122,7 +122,7 @@
   "Attempts to coerce its argument into an open java.io.InputStream.
    Default implementations always return a java.io.BufferedInputStream.
 
-   Default implementations are defined for OutputStream, File, URI, URL,
+   Default implementations are defined for InputStream, File, URI, URL,
    Socket, byte array, and String arguments.
 
    If the argument is a String, it tries to resolve it first as a URI, then
@@ -282,6 +282,16 @@
   IOFactory
   default-streams-impl)
 
+(extend nil
+  IOFactory
+  (assoc default-streams-impl
+    :make-reader (fn [x opts]
+                   (throw (IllegalArgumentException.
+                           (str "Cannot open <" (pr-str x) "> as a Reader."))))
+    :make-writer (fn [x opts]
+                   (throw (IllegalArgumentException.
+                           (str "Cannot open <" (pr-str x) "> as a Writer."))))))
+
 (defmulti
   ^{:doc "Internal helper for copy"
      :private true
@@ -380,7 +390,7 @@
 
 (defn copy
   "Copies input to output.  Returns nil or throws IOException.
-  Input may be an InputStream, Reader, File, byte[], or String.
+  Input may be an InputStream, Reader, File, byte[], char[], or String.
   Output may be an OutputStream, Writer, or File.
 
   Options are key/value pairs and may be one of
@@ -418,7 +428,7 @@
      (reduce file (file parent child) more)))
 
 (defn delete-file
-  "Delete file f. Raise an exception if it fails unless silently is true."
+  "Delete file f. If silently is nil or false, raise an exception on failure, else return the value of silently."
   {:added "1.2"}
   [f & [silently]]
   (or (.delete (file f))

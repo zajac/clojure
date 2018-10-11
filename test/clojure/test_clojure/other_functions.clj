@@ -328,6 +328,19 @@
                  (apply (apply some-fn (repeat i (comp not boolean))) (range i))))
                  true))))
 
+
+(deftest test-max-min-key
+  (are [k coll min-item max-item] (and (= min-item (apply min-key k coll))
+                                       (= max-item (apply max-key k coll)))
+       count ["longest" "a" "xy" "foo" "bar"] "a" "longest"
+       - [5 10 15 20 25] 25 5
+       #(if (neg? %) (- %) %) [-2 -1 0 1 2 3 4] 0 4
+       {nil 1 false -1 true 0} [true true false nil] false nil)
+  (are [f k coll expected] (= expected (apply f k coll))
+    min-key :x [{:x 1000} {:x 1001} {:x 1002} {:x 1000 :second true}] {:x 1000 :second true}
+    max-key :x [{:x 1000} {:x 999} {:x 998} {:x 1000 :second true}] {:x 1000 :second true}))
+
+
 ; Printing
 ; pr prn print println newline
 ; pr-str prn-str print-str println-str [with-out-str (vars.clj)]
@@ -335,3 +348,21 @@
 ; Regex Support
 ; re-matcher re-find re-matches re-groups re-seq
 
+; update
+
+(deftest test-update
+  (are [result expr] (= result expr)
+    {:a [1 2]}   (update {:a [1]} :a conj 2)
+    [1]          (update [0] 0 inc)
+    ;; higher-order usage
+    {:a {:b 2}}  (update-in {:a {:b 1}} [:a] update :b inc)
+    ;; missing field = nil
+    {:a 1 :b nil} (update {:a 1} :b identity)
+    ;; 4 hard-coded arities
+    {:a 1} (update {:a 1} :a +)
+    {:a 2} (update {:a 1} :a + 1)
+    {:a 3} (update {:a 1} :a + 1 1)
+    {:a 4} (update {:a 1} :a + 1 1 1)
+    ;; rest arity
+    {:a 5} (update {:a 1} :a + 1 1 1 1)
+    {:a 6} (update {:a 1} :a + 1 1 1 1 1)))

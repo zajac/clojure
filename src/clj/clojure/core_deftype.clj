@@ -63,7 +63,7 @@
         methods (map (fn [[name params & body]]
                        (cons name (maybe-destructured params body)))
                      (apply concat (vals impls)))]
-    (when-let [bad-opts (seq (remove #{:no-print} (keys opts)))]
+    (when-let [bad-opts (seq (remove #{:no-print :load-ns} (keys opts)))]
       (throw (IllegalArgumentException. (apply print-str "Unsupported option(s) -" bad-opts))))
     [interfaces methods opts]))
 
@@ -132,7 +132,7 @@
 (defn- imap-cons
   [^IPersistentMap this o]
   (cond
-   (instance? java.util.Map$Entry o)
+   (map-entry? o)
      (let [^java.util.Map$Entry pair o]
        (.assoc this (.getKey pair) (.getValue pair)))
    (instance? clojure.lang.IPersistentVector o)
@@ -148,15 +148,17 @@
 (defn- emit-defrecord 
   "Do not use this directly - use defrecord"
   {:added "1.2"}
-  [tagname name fields interfaces methods]
-  (let [classname (with-meta (symbol (str (namespace-munge *ns*) "." name)) (meta name))
+  [tagname cname fields interfaces methods opts]
+  (let [classname (with-meta (symbol (str (namespace-munge *ns*) "." cname)) (meta cname))
         interfaces (vec interfaces)
         interface-set (set (map resolve interfaces))
         methodname-set (set (map first methods))
         hinted-fields fields
         fields (vec (map #(with-meta % nil) fields))
         base-fields fields
-        fields (conj fields '__meta '__extmap)
+        fields (conj fields '__meta '__extmap
+                     '^:unsynchronized-mutable __hash
+                     '^:unsynchronized-mutable __hasheq)
         type-hash (hash classname)]
     (when (some #{:volatile-mutable :unsynchronized-mutable} (mapcat (comp keys meta) hinted-fields))
       (throw (IllegalArgumentException. ":volatile-mutable or :unsynchronized-mutable not supported for record fields")))
@@ -168,8 +170,18 @@
       (eqhash [[i m]] 
         [(conj i 'clojure.lang.IHashEq)
          (conj m
-               `(hasheq [this#] (bit-xor ~type-hash (clojure.lang.APersistentMap/mapHasheq this#)))
-               `(hashCode [this#] (clojure.lang.APersistentMap/mapHash this#))
+               `(hasheq [this#] (let [hq# ~'__hasheq]
+                                  (if (zero? hq#)
+                                    (let [h# (int (bit-xor ~type-hash (clojure.lang.APersistentMap/mapHasheq this#)))]
+                                      (set! ~'__hasheq h#)
+                                      h#)
+                                    hq#)))
+               `(hashCode [this#] (let [hash# ~'__hash]
+                                    (if (zero? hash#)
+                                      (let [h# (clojure.lang.APersistentMap/mapHash this#)]
+                                        (set! ~'__hash h#)
+                                        h#)
+                                      hash#)))
                `(equals [this# ~gs] (clojure.lang.APersistentMap/mapEquals this# ~gs)))])
       (iobj [[i m]] 
             [(conj i 'clojure.lang.IObj)
@@ -212,19 +224,20 @@
                    `(containsKey [this# k#] (not (identical? this# (.valAt this# k# this#))))
                    `(entryAt [this# k#] (let [v# (.valAt this# k# this#)]
                                             (when-not (identical? this# v#)
-                                              (clojure.lang.MapEntry. k# v#))))
-                   `(seq [this#] (seq (concat [~@(map #(list `new `clojure.lang.MapEntry (keyword %) %) base-fields)] 
+                                              (clojure.lang.MapEntry/create k# v#))))
+                   `(seq [this#] (seq (concat [~@(map #(list `clojure.lang.MapEntry/create (keyword %) %) base-fields)]
                                               ~'__extmap)))
-                   `(iterator [this#] (clojure.lang.SeqIterator. (.seq this#)))
+                   `(iterator [~gs]
+                        (clojure.lang.RecordIterator. ~gs [~@(map keyword base-fields)] (RT/iter ~'__extmap)))
                    `(assoc [this# k# ~gs]
                      (condp identical? k#
                        ~@(mapcat (fn [fld]
-                                   [(keyword fld) (list* `new tagname (replace {fld gs} fields))])
+                                   [(keyword fld) (list* `new tagname (replace {fld gs} (remove '#{__hash __hasheq} fields)))])
                                  base-fields)
-                       (new ~tagname ~@(remove #{'__extmap} fields) (assoc ~'__extmap k# ~gs))))
+                       (new ~tagname ~@(remove '#{__extmap __hash __hasheq} fields) (assoc ~'__extmap k# ~gs))))
                    `(without [this# k#] (if (contains? #{~@(map keyword base-fields)} k#)
                                             (dissoc (with-meta (into {} this#) ~'__meta) k#)
-                                            (new ~tagname ~@(remove #{'__extmap} fields) 
+                                            (new ~tagname ~@(remove '#{__extmap __hash __hasheq} fields)
                                                  (not-empty (dissoc ~'__extmap k#))))))])
       (ijavamap [[i m]]
                 [(conj i 'java.util.Map 'java.io.Serializable)
@@ -242,8 +255,12 @@
                        `(entrySet [this#] (set this#)))])
       ]
      (let [[i m] (-> [interfaces methods] irecord eqhash iobj ilookup imap ijavamap)]
-       `(deftype* ~tagname ~classname ~(conj hinted-fields '__meta '__extmap) 
-          :implements ~(vec i) 
+       `(deftype* ~(symbol (name (ns-name *ns*)) (name tagname)) ~classname
+          ~(conj hinted-fields '__meta '__extmap
+                 '^int ^:unsynchronized-mutable __hash
+                 '^int ^:unsynchronized-mutable __hasheq)
+          :implements ~(vec i)
+          ~@(mapcat identity opts)
           ~@m))))))
 
 (defn- build-positional-factory
@@ -275,17 +292,32 @@
 
 (defn- validate-fields
   ""
-  [fields]
+  [fields name]
   (when-not (vector? fields)
     (throw (AssertionError. "No fields vector given.")))
-  (let [specials #{'__meta '__extmap}]
+  (let [specials '#{__meta __hash __hasheq __extmap}]
     (when (some specials fields)
-      (throw (AssertionError. (str "The names in " specials " cannot be used as field names for types or records."))))))
+      (throw (AssertionError. (str "The names in " specials " cannot be used as field names for types or records.")))))
+  (let [non-syms (remove symbol? fields)]
+    (when (seq non-syms)
+      (throw (clojure.lang.Compiler$CompilerException.
+              *file*
+              (.deref clojure.lang.Compiler/LINE)
+              (.deref clojure.lang.Compiler/COLUMN)
+              (AssertionError.
+               (str "defrecord and deftype fields must be symbols, "
+                    *ns* "." name " had: "
+                    (apply str (interpose ", " non-syms)))))))))
 
 (defmacro defrecord
   "(defrecord name [fields*]  options* specs*)
-  
-  Currently there are no options.
+
+  Options are expressed as sequential keywords and arguments (in any order).
+
+  Supported options:
+  :load-ns - if true, importing the record class will cause the
+             namespace in which the record was defined to be loaded.
+             Defaults to false.
 
   Each spec consists of a protocol or interface name followed by zero
   or more method bodies:
@@ -340,9 +372,9 @@
   Two constructors will be defined, one taking the designated fields
   followed by a metadata map (nil for none) and an extension field
   map (nil for none), and one taking only the fields (using nil for
-  meta and extension fields). Note that the field names __meta
-  and __extmap are currently reserved and should not be used when
-  defining your own records.
+  meta and extension fields). Note that the field names __meta,
+  __extmap, __hash and __hasheq are currently reserved and should not
+  be used when defining your own records.
 
   Given (defrecord TypeName ...), two factory functions will be
   defined: ->TypeName, taking positional parameters for the fields,
@@ -351,7 +383,7 @@
    :arglists '([name [& fields] & opts+specs])}
 
   [name fields & opts+specs]
-  (validate-fields fields)
+  (validate-fields fields name)
   (let [gname name
         [interfaces methods opts] (parse-opts+specs opts+specs)
         ns-part (namespace-munge *ns*)
@@ -361,12 +393,13 @@
     `(let []
        (declare ~(symbol (str  '-> gname)))
        (declare ~(symbol (str 'map-> gname)))
-       ~(emit-defrecord name gname (vec hinted-fields) (vec interfaces) methods)
+       ~(emit-defrecord name gname (vec hinted-fields) (vec interfaces) methods opts)
        (import ~classname)
        ~(build-positional-factory gname classname fields)
        (defn ~(symbol (str 'map-> gname))
          ~(str "Factory function for class " classname ", taking a map of keywords to field values.")
-         ([m#] (~(symbol (str classname "/create")) m#)))
+         ([m#] (~(symbol (str classname "/create"))
+                (if (instance? clojure.lang.MapEquivalence m#) m# (into {} m#)))))
        ~classname)))
 
 (defn record?
@@ -378,17 +411,23 @@
 
 (defn- emit-deftype*
   "Do not use this directly - use deftype"
-  [tagname name fields interfaces methods]
-  (let [classname (with-meta (symbol (str (namespace-munge *ns*) "." name)) (meta name))
+  [tagname cname fields interfaces methods opts]
+  (let [classname (with-meta (symbol (str (namespace-munge *ns*) "." cname)) (meta cname))
         interfaces (conj interfaces 'clojure.lang.IType)]
-    `(deftype* ~tagname ~classname ~fields 
+    `(deftype* ~(symbol (name (ns-name *ns*)) (name tagname)) ~classname ~fields
        :implements ~interfaces 
+       ~@(mapcat identity opts)
        ~@methods)))
 
 (defmacro deftype
   "(deftype name [fields*]  options* specs*)
-  
-  Currently there are no options.
+
+  Options are expressed as sequential keywords and arguments (in any order).
+
+  Supported options:
+  :load-ns - if true, importing the type class will cause the
+             namespace in which the type was defined to be loaded.
+             Defaults to false.
 
   Each spec consists of a protocol or interface name followed by zero
   or more method bodies:
@@ -406,7 +445,7 @@
   are optional. The only methods that can be supplied are those
   declared in the protocols/interfaces.  Note that method bodies are
   not closures, the local environment includes only the named fields,
-  and those fields can be accessed directy. Fields can be qualified
+  and those fields can be accessed directly. Fields can be qualified
   with the metadata :volatile-mutable true or :unsynchronized-mutable
   true, at which point (set! afield aval) will be supported in method
   bodies. Note well that mutable fields are extremely difficult to use
@@ -441,8 +480,8 @@
   writes the .class file to the *compile-path* directory.
 
   One constructor will be defined, taking the designated fields.  Note
-  that the field names __meta and __extmap are currently reserved and
-  should not be used when defining your own types.
+  that the field names __meta, __extmap, __hash and __hasheq are currently
+  reserved and should not be used when defining your own types.
 
   Given (deftype TypeName ...), a factory function called ->TypeName
   will be defined, taking positional parameters for the fields"
@@ -450,7 +489,7 @@
    :arglists '([name [& fields] & opts+specs])}
 
   [name fields & opts+specs]
-  (validate-fields fields)
+  (validate-fields fields name)
   (let [gname name
         [interfaces methods opts] (parse-opts+specs opts+specs)
         ns-part (namespace-munge *ns*)
@@ -459,7 +498,7 @@
         fields (vec (map #(with-meta % nil) fields))
         [field-args over] (split-at 20 fields)]
     `(let []
-       ~(emit-deftype* name gname (vec hinted-fields) (vec interfaces) methods)
+       ~(emit-deftype* name gname (vec hinted-fields) (vec interfaces) methods opts)
        (import ~classname)
        ~(build-positional-factory gname classname fields)
        ~classname)))
@@ -753,7 +792,7 @@
 
 (defn- emit-impl [[p fs]]
   [p (zipmap (map #(-> % first keyword) fs)
-             (map #(cons 'fn (drop 1 %)) fs))])
+             (map #(cons `fn (drop 1 %)) fs))])
 
 (defn- emit-hinted-impl [c [p fs]]
   (let [hint (fn [specs]
@@ -765,7 +804,7 @@
                               body))
                       specs)))]
     [p (zipmap (map #(-> % first name keyword) fs)
-               (map #(cons 'fn (hint (drop 1 %))) fs))]))
+               (map #(cons `fn (hint (drop 1 %))) fs))]))
 
 (defn- emit-extend-type [c specs]
   (let [impls (parse-impls specs)]

@@ -15,7 +15,8 @@
   (:use clojure.test
         [clojure.test.generative :exclude (is)]
         clojure.template)
-  (:require [clojure.data.generators :as gen]))
+  (:require [clojure.data.generators :as gen]
+            [clojure.test-helper :as helper]))
 
 
 ; TODO:
@@ -71,6 +72,7 @@
   (all-pairs-equal #'= [(byte 2) (short 2) (int 2) (long 2)
                         (bigint 2) (biginteger 2)])
   (all-pairs-equal #'= [(float 2.0) (double 2.0)])
+  (all-pairs-equal #'= [(float 0.0) (double 0.0) (float -0.0) (double -0.0)])
   (all-pairs-equal #'= [2.0M 2.00M])
   (all-pairs-equal #'= [(float 1.5) (double 1.5)])
   (all-pairs-equal #'= [1.50M 1.500M])
@@ -84,12 +86,13 @@
                                      (bigint 2)
                                      (double 2.0) 2.0M 2.00M])
   (all-pairs-hash-consistent-with-= [(/ 3 2) (double 1.5) 1.50M 1.500M])
-  (all-pairs-hash-consistent-with-= [(double 0.0) 0.0M 0.00M])
+  (all-pairs-hash-consistent-with-= [(double -0.0) (double 0.0) -0.0M -0.00M 0.0M 0.00M (float -0.0) (float 0.0)])
 
   ;; == tests for numerical equality, returning true even for numbers
   ;; in different categories.
   (all-pairs-equal #'== [(byte 0) (short 0) (int 0) (long 0)
                          (bigint 0) (biginteger 0)
+                         (float -0.0) (double -0.0) -0.0M -0.00M
                          (float 0.0) (double 0.0) 0.0M 0.00M])
   (all-pairs-equal #'== [(byte 2) (short 2) (int 2) (long 2)
                          (bigint 2) (biginteger 2)
@@ -299,6 +302,14 @@
   (is (thrown? ArithmeticException (/ 2 0)))
   (is (thrown? IllegalArgumentException (/))) )
 
+(deftest test-divide-bigint-at-edge
+  (are [x] (= x (-' Long/MIN_VALUE))
+       (/ Long/MIN_VALUE -1N)
+       (/ (bigint Long/MIN_VALUE) -1)
+       (/ (bigint Long/MIN_VALUE) -1N)
+       (quot Long/MIN_VALUE -1N)
+       (quot (bigint Long/MIN_VALUE) -1)
+       (quot (bigint Long/MIN_VALUE) -1N)))
 
 ;; mod
 ;; http://en.wikipedia.org/wiki/Modulo_operation
@@ -722,3 +733,149 @@ Math/pow overflows to Infinity."
       (assert (= a
                  (+ (* q d) r)
                  (unchecked-add (unchecked-multiply q d) r))))))
+
+(defmacro check-warn-on-box [warn? form]
+  `(do (binding [*unchecked-math* :warn-on-boxed]
+                (is (= ~warn?
+                       (boolean
+                         (re-find #"^Boxed math warning"
+                                  (helper/with-err-string-writer
+                                    (helper/eval-in-temp-ns ~form)))))))
+       (binding [*unchecked-math* true]
+                (is (false?
+                      (boolean
+                        (re-find #"^Boxed math warning"
+                                 (helper/with-err-string-writer
+                                   (helper/eval-in-temp-ns ~form)))))))
+       (binding [*unchecked-math* false]
+                (is (false?
+                      (boolean
+                        (re-find #"^Boxed math warning"
+                                 (helper/with-err-string-writer
+                                   (helper/eval-in-temp-ns ~form)))))))))
+
+(deftest warn-on-boxed
+  (check-warn-on-box true (#(inc %) 2))
+  (check-warn-on-box false (#(inc ^long %) 2))
+  (check-warn-on-box false (long-array 5))
+  (check-warn-on-box true (> (first (range 3)) 0))
+  (check-warn-on-box false (> ^long (first (range 3)) 0)))
+
+
+(deftest comparisons
+  (let [small-numbers [1 1.0 (Integer. 1) (Float. 1.0) 9/10 1N 1M]
+        big-numbers [10 10.0 (Integer. 10) (Float. 10.0) 99/10 10N 10N]]
+    (doseq [small small-numbers big big-numbers]
+      (is (< small big))
+      (is (not (< big small)))
+      (is (not (< small small)))
+      (is (< (int small) (int big)))
+      (is (not (< (int big) (int small))))
+      (is (not (< (int small) (int small))))
+      (is (< (double small) (double big)))
+      (is (not (< (double big) (double small))))
+      (is (not (< (double small) (double small))))
+      (is (<= small big))
+      (is (<= small small))
+      (is (not (<= big small)))
+      (is (<= (int small) (int big)))
+      (is (<= (int small) (int small)))
+      (is (not (<= (int big) (int small))))
+      (is (<= (double small) (double big)))
+      (is (<= (double small) (double small)))
+      (is (not (<= (double big) (double small))))
+      (is (> big small))
+      (is (not (> small big)))
+      (is (not (> small small)))
+      (is (> (int big) (int small)))
+      (is (not (> (int small) (int big))))
+      (is (not (> (int small) (int small))))
+      (is (> (double big) (double small)))
+      (is (not (> (double small) (double big))))
+      (is (not (> (double small) (double small))))
+      (is (>= big small))
+      (is (>= small small))
+      (is (not (>= small big)))
+      (is (>= (int big) (int small)))
+      (is (>= (int small) (int small)))
+      (is (not (>= (int small) (int big))))
+      (is (>= (double big) (double small)))
+      (is (>= (double small) (double small)))
+      (is (not (>= (double small) (double big)))))))
+
+(deftest test-nan-comparison
+  (are [x y] (= x y)
+       (< 1000 Double/NaN) (< 1000 (Double. Double/NaN))
+       (<= 1000 Double/NaN) (<= 1000 (Double. Double/NaN))
+       (> 1000 Double/NaN) (> 1000 (Double. Double/NaN))
+       (>= 1000 Double/NaN) (>= 1000 (Double. Double/NaN))))
+
+(deftest test-nan-as-operand
+  (testing "All numeric operations with NaN as an operand produce NaN as a result"
+    (let [nan Double/NaN
+          onan (cast Object Double/NaN)]
+      (are [x] (Double/isNaN x)
+          (+ nan 1)
+          (+ nan 0)
+          (+ nan 0.0)
+          (+ 1 nan)
+          (+ 0 nan)
+          (+ 0.0 nan)
+          (+ nan nan)
+          (- nan 1)
+          (- nan 0)
+          (- nan 0.0)
+          (- 1 nan)
+          (- 0 nan)
+          (- 0.0 nan)
+          (- nan nan)
+          (* nan 1)
+          (* nan 0)
+          (* nan 0.0)
+          (* 1 nan)
+          (* 0 nan)
+          (* 0.0 nan)
+          (* nan nan)
+          (/ nan 1)
+          (/ nan 0)
+          (/ nan 0.0)
+          (/ 1 nan)
+          (/ 0 nan)
+          (/ 0.0 nan)
+          (/ nan nan)
+          (+ onan 1)
+          (+ onan 0)
+          (+ onan 0.0)
+          (+ 1 onan)
+          (+ 0 onan)
+          (+ 0.0 onan)
+          (+ onan onan)
+          (- onan 1)
+          (- onan 0)
+          (- onan 0.0)
+          (- 1 onan)
+          (- 0 onan)
+          (- 0.0 onan)
+          (- onan onan)
+          (* onan 1)
+          (* onan 0)
+          (* onan 0.0)
+          (* 1 onan)
+          (* 0 onan)
+          (* 0.0 onan)
+          (* onan onan)
+          (/ onan 1)
+          (/ onan 0)
+          (/ onan 0.0)
+          (/ 1 onan)
+          (/ 0 onan)
+          (/ 0.0 onan)
+          (/ onan onan)
+          (+ nan onan)
+          (+ onan nan)
+          (- nan onan)
+          (- onan nan)
+          (* nan onan)
+          (* onan nan)
+          (/ nan onan)
+          (/ onan nan) ))))

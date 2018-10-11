@@ -19,8 +19,8 @@ public abstract class APersistentVector extends AFn implements IPersistentVector
                                                                List,
                                                                RandomAccess, Comparable,
                                                                Serializable, IHashEq {
-int _hash = -1;
-int _hasheq = -1;
+int _hash;
+int _hasheq;
 
 public String toString(){
 	return RT.printString(this);
@@ -39,9 +39,20 @@ public ISeq rseq(){
 }
 
 static boolean doEquals(IPersistentVector v, Object obj){
-	if(v == obj) return true;
-	if(obj instanceof List || obj instanceof IPersistentVector)
-		{
+    if(obj instanceof IPersistentVector)
+        {
+        IPersistentVector ov = (IPersistentVector) obj;
+        if(ov.count() != v.count())
+            return false;
+        for(int i = 0;i< v.count();i++)
+            {
+            if(!Util.equals(v.nth(i), ov.nth(i)))
+                return false;
+            }
+        return true;
+        }
+	else if(obj instanceof List)
+        {
 		Collection ma = (Collection) obj;
 		if(ma.size() != v.count() || ma.hashCode() != v.hashCode())
 			return false;
@@ -53,19 +64,8 @@ static boolean doEquals(IPersistentVector v, Object obj){
 			}
 		return true;
 		}
-//	if(obj instanceof IPersistentVector)
-//		{
-//		IPersistentVector ma = (IPersistentVector) obj;
-//		if(ma.count() != v.count() || ma.hashCode() != v.hashCode())
-//			return false;
-//		for(int i = 0; i < v.count(); i++)
-//			{
-//			if(!Util.equal(v.nth(i), ma.nth(i)))
-//				return false;
-//			}
-//		}
 	else
-		{
+        {
 		if(!(obj instanceof Sequential))
 			return false;
 		ISeq ms = RT.seq(obj);
@@ -83,7 +83,19 @@ static boolean doEquals(IPersistentVector v, Object obj){
 }
 
 static boolean doEquiv(IPersistentVector v, Object obj){
-	if(obj instanceof List || obj instanceof IPersistentVector)
+    if(obj instanceof IPersistentVector)
+        {
+        IPersistentVector ov = (IPersistentVector) obj;
+        if(ov.count() != v.count())
+            return false;
+        for(int i = 0;i< v.count();i++)
+            {
+            if(!Util.equiv(v.nth(i), ov.nth(i)))
+                return false;
+            }
+        return true;
+    }
+	else if(obj instanceof List)
 		{
 		Collection ma = (Collection) obj;
 		if(ma.size() != v.count())
@@ -96,17 +108,6 @@ static boolean doEquiv(IPersistentVector v, Object obj){
 			}
 		return true;
 		}
-//	if(obj instanceof IPersistentVector)
-//		{
-//		IPersistentVector ma = (IPersistentVector) obj;
-//		if(ma.count() != v.count() || ma.hashCode() != v.hashCode())
-//			return false;
-//		for(int i = 0; i < v.count(); i++)
-//			{
-//			if(!Util.equal(v.nth(i), ma.nth(i)))
-//				return false;
-//			}
-//		}
 	else
 		{
 		if(!(obj instanceof Sequential))
@@ -126,46 +127,46 @@ static boolean doEquiv(IPersistentVector v, Object obj){
 }
 
 public boolean equals(Object obj){
+    if(obj == this)
+        return true;
 	return doEquals(this, obj);
 }
 
 public boolean equiv(Object obj){
+    if(obj == this)
+        return true;
 	return doEquiv(this, obj);
 }
 
 public int hashCode(){
-	if(_hash == -1)
+    int hash = this._hash;
+	if(hash == 0)
 		{
-		int hash = 1;
-		Iterator i = iterator();
-		while(i.hasNext())
+		hash = 1;
+		for(int i = 0;i<count();i++)
 			{
-			Object obj = i.next();
+			Object obj = nth(i);
 			hash = 31 * hash + (obj == null ? 0 : obj.hashCode());
 			}
-//		int hash = 0;
-//		for(int i = 0; i < count(); i++)
-//			{
-//			hash = Util.hashCombine(hash, Util.hash(nth(i)));
-//			}
 		this._hash = hash;
 		}
-	return _hash;
+	return hash;
 }
 
 public int hasheq(){
-	if(_hasheq == -1) {
-//	int hash = 1;
-//	Iterator i = iterator();
-//	while(i.hasNext())
-//		{
-//		Object obj = i.next();
-//		hash = 31 * hash + Util.hasheq(obj);
-//		}
-//	_hasheq = hash;
-	_hasheq  = Murmur3.hashOrdered(this);
+    int hash = this._hasheq;
+	if(hash == 0) {
+        int n;
+        hash = 1;
+
+        for(n=0;n<count();++n)
+            {
+            hash = 31 * hash + Util.hasheq(nth(n));
+            }
+
+        this._hasheq = hash = Murmur3.mixCollHash(hash, n);
 	}
-	return _hasheq;
+	return hash;
 }
 
 public Object get(int index){
@@ -209,7 +210,10 @@ public ListIterator listIterator(final int index){
 		}
 
 		public Object next(){
-			return nth(nexti++);
+			if(nexti < count())
+				return nth(nexti++);
+			else
+				throw new NoSuchElementException();
 		}
 
 		public boolean hasPrevious(){
@@ -217,7 +221,10 @@ public ListIterator listIterator(final int index){
 		}
 
 		public Object previous(){
-			return nth(--nexti);
+			if(nexti > 0)
+				return nth(--nexti);
+			else
+				throw new NoSuchElementException();
 		}
 
 		public int nextIndex(){
@@ -251,7 +258,10 @@ Iterator rangedIterator(final int start, final int end){
 		}
 
 		public Object next(){
-			return nth(i++);
+			if(i < end)
+				return nth(i++);
+			else
+				throw new NoSuchElementException();
 		}
 
 		public void remove(){
@@ -294,7 +304,9 @@ public Iterator iterator(){
 		}
 
 		public Object next(){
-			return nth(i++);
+			if(i < count())
+				return nth(i++);
+			else throw new NoSuchElementException();
 		}
 
 		public void remove(){
@@ -321,7 +333,7 @@ public IMapEntry entryAt(Object key){
 		{
 		int i = ((Number) key).intValue();
 		if(i >= 0 && i < count())
-			return new MapEntry(key, nth(i));
+			return (IMapEntry) MapEntry.create(key, nth(i));
 		}
 	return null;
 }
@@ -352,7 +364,10 @@ public Object valAt(Object key){
 // java.util.Collection implementation
 
 public Object[] toArray(){
-	return RT.seqToArray(seq());
+	Object[] ret = new Object[count()];
+	for(int i=0;i<count();i++)
+		ret[i] = nth(i);
+	return ret;
 }
 
 public boolean add(Object o){
@@ -428,7 +443,7 @@ public int compareTo(Object o){
 	return 0;
 }
 
-    static class Seq extends ASeq implements IndexedSeq, IReduce{
+static class Seq extends ASeq implements IndexedSeq, IReduce{
 	//todo - something more efficient
 	final IPersistentVector v;
 	final int i;
@@ -464,20 +479,27 @@ public int compareTo(Object o){
 	}
 
 	public APersistentVector.Seq withMeta(IPersistentMap meta){
+		if(meta() == meta)
+			return this;
 		return new APersistentVector.Seq(meta, v, i);
 	}
 
 	public Object reduce(IFn f) {
 		Object ret = v.nth(i);
-		for(int x = i + 1; x < v.count(); x++)
-			ret = f.invoke(ret, v.nth(x));
+		for(int x = i + 1; x < v.count(); x++) {
+            ret = f.invoke(ret, v.nth(x));
+            if (RT.isReduced(ret)) return ((IDeref)ret).deref();
+        }
 		return ret;
 	}
 
 	public Object reduce(IFn f, Object start) {
 		Object ret = f.invoke(start, v.nth(i));
-		for(int x = i + 1; x < v.count(); x++)
-			ret = f.invoke(ret, v.nth(x));
+		for(int x = i + 1; x < v.count(); x++) {
+            if (RT.isReduced(ret)) return ((IDeref)ret).deref();
+            ret = f.invoke(ret, v.nth(x));
+        }
+		if (RT.isReduced(ret)) return ((IDeref)ret).deref();
 		return ret;
 	}
     }
@@ -516,6 +538,8 @@ public static class RSeq extends ASeq implements IndexedSeq, Counted{
 	}
 
 	public APersistentVector.RSeq withMeta(IPersistentMap meta){
+		if(meta() == meta)
+			return this;
 		return new APersistentVector.RSeq(meta, v, i);
 	}
 }

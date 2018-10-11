@@ -14,8 +14,8 @@ import java.io.Serializable;
 import java.util.*;
 
 public abstract class APersistentMap extends AFn implements IPersistentMap, Map, Iterable, Serializable, MapEquivalence, IHashEq {
-int _hash = -1;
-int _hasheq = -1;
+int _hash;
+int _hasheq;
 
 public String toString(){
 	return RT.printString(this);
@@ -93,11 +93,12 @@ public boolean equiv(Object obj){
 	return true;
 }
 public int hashCode(){
-	if(_hash == -1)
+    int cached = this._hash;
+	if(cached == 0)
 		{
-		this._hash = mapHash(this);
+		this._hash = cached = mapHash(this);
 		}
-	return _hash;
+	return cached;
 }
 
 static public int mapHash(IPersistentMap m){
@@ -112,12 +113,13 @@ static public int mapHash(IPersistentMap m){
 }
 
 public int hasheq(){
-	if(_hasheq == -1)
+    int cached = this._hasheq;
+	if(cached == 0)
 		{
 		//this._hasheq = mapHasheq(this);
-		_hasheq = Murmur3.hashUnordered(this);
+		this._hasheq = cached = Murmur3.hashUnordered(this);
 		}
-	return _hasheq;
+	return cached;
 }
 
 static public int mapHasheq(IPersistentMap m) {
@@ -133,21 +135,33 @@ static public int mapHasheq(IPersistentMap m) {
 }
 
 static public class KeySeq extends ASeq{
-	ISeq seq;
+	final ISeq seq;
+	final Iterable iterable;
 
 	static public KeySeq create(ISeq seq){
 		if(seq == null)
 			return null;
-		return new KeySeq(seq);
+		return new KeySeq(seq, null);
 	}
 
-	private KeySeq(ISeq seq){
+	static public KeySeq createFromMap(IPersistentMap map){
+		if(map == null)
+			return null;
+		ISeq seq = map.seq();
+		if(seq == null)
+			return null;
+		return new KeySeq(seq, map);
+	}
+
+	private KeySeq(ISeq seq, Iterable iterable){
 		this.seq = seq;
+		this.iterable = iterable;
 	}
 
-	private KeySeq(IPersistentMap meta, ISeq seq){
+	private KeySeq(IPersistentMap meta, ISeq seq, Iterable iterable){
 		super(meta);
 		this.seq = seq;
+		this.iterable = iterable;
 	}
 
 	public Object first(){
@@ -159,26 +173,63 @@ static public class KeySeq extends ASeq{
 	}
 
 	public KeySeq withMeta(IPersistentMap meta){
-		return new KeySeq(meta, seq);
+		if(meta() == meta)
+			return this;
+		return new KeySeq(meta, seq, iterable);
+	}
+
+	public Iterator iterator(){
+		if(iterable == null)
+			return super.iterator();
+
+		if(iterable instanceof IMapIterable)
+			return ((IMapIterable)iterable).keyIterator();
+
+		final Iterator mapIter = iterable.iterator();
+		return new Iterator() {
+			public boolean hasNext() {
+				return mapIter.hasNext();
+			}
+
+			public Object next() {
+				return ((Map.Entry)mapIter.next()).getKey();
+			}
+
+			public void remove() {
+				throw new UnsupportedOperationException();
+			}
+		};
 	}
 }
 
 static public class ValSeq extends ASeq{
-	ISeq seq;
+	final ISeq seq;
+	final Iterable iterable;
 
 	static public ValSeq create(ISeq seq){
 		if(seq == null)
 			return null;
-		return new ValSeq(seq);
+		return new ValSeq(seq, null);
 	}
 
-	private ValSeq(ISeq seq){
+	static public ValSeq createFromMap(IPersistentMap map) {
+		if(map == null)
+			return null;
+		ISeq seq = map.seq();
+		if(seq == null)
+			return null;
+		return new ValSeq(seq, map);
+	}
+
+	private ValSeq(ISeq seq, Iterable iterable){
 		this.seq = seq;
+		this.iterable = iterable;
 	}
 
-	private ValSeq(IPersistentMap meta, ISeq seq){
+	private ValSeq(IPersistentMap meta, ISeq seq, Iterable iterable){
 		super(meta);
 		this.seq = seq;
+		this.iterable = iterable;
 	}
 
 	public Object first(){
@@ -190,10 +241,52 @@ static public class ValSeq extends ASeq{
 	}
 
 	public ValSeq withMeta(IPersistentMap meta){
-		return new ValSeq(meta, seq);
+		if(meta() == meta)
+			return this;
+		return new ValSeq(meta, seq, iterable);
+	}
+
+	public Iterator iterator(){
+		if(iterable == null)
+			return super.iterator();
+
+		if(iterable instanceof IMapIterable)
+			return ((IMapIterable)iterable).valIterator();
+
+		final Iterator mapIter = iterable.iterator();
+		return new Iterator() {
+			public boolean hasNext() {
+				return mapIter.hasNext();
+			}
+
+			public Object next() {
+				return ((Map.Entry)mapIter.next()).getValue();
+			}
+
+			public void remove() {
+				throw new UnsupportedOperationException();
+			}
+		};
 	}
 }
 
+static final IFn MAKE_ENTRY = new AFn() {
+    public Object invoke(Object key, Object val) {
+        return MapEntry.create(key, val);
+    }
+};
+
+static final IFn MAKE_KEY = new AFn() {
+    public Object invoke(Object key, Object val) {
+        return key;
+    }
+};
+
+static final IFn MAKE_VAL = new AFn() {
+    public Object invoke(Object key, Object val) {
+        return val;
+    }
+};
 
 public Object invoke(Object arg1) {
 	return valAt(arg1);

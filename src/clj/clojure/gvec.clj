@@ -12,7 +12,7 @@
 
 (import '(clojure.lang Murmur3))
 
-;(set! *warn-on-reflection* true)
+(set! *warn-on-reflection* true)
 
 (deftype VecNode [edit arr])
 
@@ -49,9 +49,11 @@
   (reduce [_ f init]
     (loop [ret init i off]
       (if (< i end)
-        (recur (f ret (.aget am arr i)) (inc i))
-        ret)))
-  )
+        (let [ret (f ret (.aget am arr i))]
+          (if (reduced? ret)
+            ret
+            (recur ret (inc i))))
+        ret))))
 
 (deftype VecSeq [^clojure.core.ArrayManager am ^clojure.core.IVecImpl vec anode ^int i ^int offset] 
   :no-print true
@@ -60,15 +62,20 @@
   (internal-reduce
    [_ f val]
    (loop [result val
-          aidx offset]
+          aidx (+ i offset)]
      (if (< aidx (count vec))
        (let [node (.arrayFor vec aidx)
              result (loop [result result
                            node-idx (bit-and 0x1f aidx)]
                       (if (< node-idx (.alength am node))
-                        (recur (f result (.aget am node node-idx)) (inc node-idx))
+                        (let [result (f result (.aget am node node-idx))]
+                          (if (reduced? result)
+                            result
+                            (recur result (inc node-idx))))
                         result))]
-         (recur result (bit-and 0xffe0 (+ aidx 32))))
+         (if (reduced? result)
+           @result
+           (recur result (bit-and 0xffe0 (+ aidx 32)))))
        result)))
   
   clojure.lang.ISeq
@@ -242,6 +249,7 @@
          (new Vec am cnt shift (.doAssoc this shift root i val) tail (meta this)))
      (= i cnt) (.cons this val)
      :else (throw (IndexOutOfBoundsException.))))
+  (length [_] cnt)
   
   clojure.lang.Reversible
   (rseq [this]
@@ -260,7 +268,7 @@
          (< (int k) cnt)))
   (entryAt [this k]
     (if (.containsKey this k)
-      (clojure.lang.MapEntry. k (.nth this (int k)))
+      (clojure.lang.MapEntry/create k (.nth this (int k)))
       nil))
 
   clojure.lang.ILookup
@@ -378,7 +386,10 @@
     (let [i (java.util.concurrent.atomic.AtomicInteger. 0)]
       (reify java.util.Iterator
         (hasNext [_] (< (.get i) cnt))
-        (next [_] (.nth this (dec (.incrementAndGet i))))
+        (next [_] (try
+                    (.nth this (dec (.incrementAndGet i)))
+                    (catch IndexOutOfBoundsException _
+                      (throw (java.util.NoSuchElementException.)))))
         (remove [_] (throw (UnsupportedOperationException.))))))
 
   java.util.Collection
@@ -421,9 +432,15 @@
       (reify java.util.ListIterator
         (hasNext [_] (< (.get i) cnt))
         (hasPrevious [_] (pos? i))
-        (next [_] (.nth this (dec (.incrementAndGet i))))
+        (next [_] (try
+                    (.nth this (dec (.incrementAndGet i)))
+                    (catch IndexOutOfBoundsException _
+                      (throw (java.util.NoSuchElementException.)))))
         (nextIndex [_] (.get i))
-        (previous [_] (.nth this (.decrementAndGet i)))
+        (previous [_] (try
+                        (.nth this (.decrementAndGet i))
+                        (catch IndexOutOfBoundsException _
+                          (throw (java.util.NoSuchElementException.)))))
         (previousIndex [_] (dec (.get i)))
         (add [_ e] (throw (UnsupportedOperationException.)))
         (remove [_] (throw (UnsupportedOperationException.)))
@@ -458,7 +475,13 @@
       :char (mk-am char)
       :boolean (mk-am boolean)})
 
-(defn vector-of 
+(defmacro ^:private ams-check [t]
+  `(let [am# (ams ~t)]
+     (if am#
+       am#
+       (throw (IllegalArgumentException. (str "Unrecognized type " ~t))))))
+
+(defn vector-of
   "Creates a new vector of a single primitive type t, where t is one
   of :int :long :float :double :byte :short :char or :boolean. The
   resulting vector complies with the interface of vectors in general,
@@ -468,28 +491,28 @@
   {:added "1.2"
    :arglists '([t] [t & elements])}
   ([t]
-   (let [am ^clojure.core.ArrayManager (ams t)]
+   (let [^clojure.core.ArrayManager am (ams-check t)]
      (Vec. am 0 5 EMPTY-NODE (.array am 0) nil)))
   ([t x1]
-   (let [am ^clojure.core.ArrayManager (ams t)
+   (let [^clojure.core.ArrayManager am (ams-check t)
          arr (.array am 1)]
      (.aset am arr 0 x1)
      (Vec. am 1 5 EMPTY-NODE arr nil)))
   ([t x1 x2]
-   (let [am ^clojure.core.ArrayManager (ams t)
+   (let [^clojure.core.ArrayManager am (ams-check t)
          arr (.array am 2)]
      (.aset am arr 0 x1)
      (.aset am arr 1 x2)
      (Vec. am 2 5 EMPTY-NODE arr nil)))
   ([t x1 x2 x3]
-   (let [am ^clojure.core.ArrayManager (ams t)
+   (let [^clojure.core.ArrayManager am (ams-check t)
          arr (.array am 3)]
      (.aset am arr 0 x1)
      (.aset am arr 1 x2)
      (.aset am arr 2 x3)
      (Vec. am 3 5 EMPTY-NODE arr nil)))
   ([t x1 x2 x3 x4]
-   (let [am ^clojure.core.ArrayManager (ams t)
+   (let [^clojure.core.ArrayManager am (ams-check t)
          arr (.array am 4)]
      (.aset am arr 0 x1)
      (.aset am arr 1 x2)
@@ -500,5 +523,5 @@
    (loop [v  (vector-of t x1 x2 x3 x4)
           xn xn]
      (if xn
-       (recur (.cons v (first xn)) (next xn))
+       (recur (conj v (first xn)) (next xn))
        v))))

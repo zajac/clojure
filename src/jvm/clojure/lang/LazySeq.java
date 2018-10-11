@@ -31,6 +31,8 @@ private LazySeq(IPersistentMap meta, ISeq s){
 }
 
 public Obj withMeta(IPersistentMap meta){
+	if(meta() == meta)
+		return this;
 	return new LazySeq(meta, seq());
 }
 
@@ -97,14 +99,18 @@ public IPersistentCollection empty(){
 }
 
 public boolean equiv(Object o){
-	return equals(o);
+	ISeq s = seq();
+	if(s != null)
+		return s.equiv(o);
+	else
+		return (o instanceof Sequential || o instanceof List) && RT.seq(o) == null;
 }
 
 public int hashCode(){
 	ISeq s = seq();
 	if(s == null)
 		return 1;
-	return Util.hash(seq());
+	return Util.hash(s);
 }
 
 public int hasheq(){
@@ -114,7 +120,7 @@ public int hasheq(){
 public boolean equals(Object o){
 	ISeq s = seq();
 	if(s != null)
-		return s.equiv(o);
+		return s.equals(o);
 	else
 		return (o instanceof Sequential || o instanceof List) && RT.seq(o) == null;
 }
@@ -181,7 +187,7 @@ public boolean contains(Object o){
 }
 
 public Iterator iterator(){
-	return new SeqIterator(seq());
+	return new SeqIterator(this);
 }
 
 //////////// List stuff /////////////////

@@ -362,6 +362,9 @@
   (testing "test emits return types"
     (should-not-reflect (Long. (case 1 1 1))) ; new Long(long)
     (should-not-reflect (Long. (case 1 1 "1")))) ; new Long(String)
+  (testing "short or byte expr compiles and matches"
+    (is (= 3 (case (short 4) 1 2 3)))
+    (is (= 3 (case (byte 4) 1 2 3))))
   (testing "non-equivalence of chars and nums"
     (are [result input] (= result (case input 97 :97 :else))
       :else \a
@@ -372,8 +375,8 @@
       :else 97N
       :a (char 97)))
   (testing "test error on duplicate test constants"
-    (is (thrown-with-msg?
-          IllegalArgumentException
+    (is (thrown-with-cause-msg?
+          clojure.lang.Compiler$CompilerException
           #"Duplicate case test constant: 1"
           (eval `(case 0 1 :x 1 :y)))))
   (testing "test correct behaviour on Number truncation"
