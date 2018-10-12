@@ -7969,13 +7969,13 @@ public static Object compile(Reader rdr, String sourcePath, String sourceName) t
 //			{
 //			objx.emitConstants(clinitgen);
 //			}
-		clinitgen.push(objx.internalName.replace('/','.') + " enter");
-		clinitgen.invokeStatic(Type.getType(Compiler.class), Method.getMethod("void prtime(String)"));
+//		clinitgen.push(objx.internalName.replace('/','.') + " enter");
+//		clinitgen.invokeStatic(Type.getType(Compiler.class), Method.getMethod("void prtime(String)"));
 		for(int n = 0;n<numInits;n++)
 			clinitgen.invokeStatic(objx.objtype, Method.getMethod("void __init" + n + "()"));
 
-		clinitgen.push(objx.internalName.replace('/','.') + " init");
-		clinitgen.invokeStatic(Type.getType(Compiler.class), Method.getMethod("void prtime(String)"));
+		//clinitgen.push(objx.internalName.replace('/','.') + " init");
+		//clinitgen.invokeStatic(Type.getType(Compiler.class), Method.getMethod("void prtime(String)"));
 
 		clinitgen.push(objx.internalName.replace('/','.'));
 		clinitgen.invokeStatic(RT_TYPE, Method.getMethod("Class classForName(String)"));
@@ -7983,13 +7983,13 @@ public static Object compile(Reader rdr, String sourcePath, String sourceName) t
 		clinitgen.invokeStatic(Type.getType(Compiler.class), Method.getMethod("void pushNSandLoader(ClassLoader)"));
 		clinitgen.mark(startTry);
 
-		clinitgen.push(objx.internalName.replace('/','.') + " class");
-		clinitgen.invokeStatic(Type.getType(Compiler.class), Method.getMethod("void prtime(String)"));
+		//clinitgen.push(objx.internalName.replace('/','.') + " class");
+		//clinitgen.invokeStatic(Type.getType(Compiler.class), Method.getMethod("void prtime(String)"));
 
 		clinitgen.invokeStatic(objx.objtype, Method.getMethod("void load()"));
 
-		clinitgen.push(objx.internalName.replace('/','.') + " load");
-		clinitgen.invokeStatic(Type.getType(Compiler.class), Method.getMethod("void prtime(String)"));
+		//clinitgen.push(objx.internalName.replace('/','.') + " load");
+		//clinitgen.invokeStatic(Type.getType(Compiler.class), Method.getMethod("void prtime(String)"));
 
 		clinitgen.mark(endTry);
 		clinitgen.invokeStatic(VAR_TYPE, Method.getMethod("void popThreadBindings()"));
