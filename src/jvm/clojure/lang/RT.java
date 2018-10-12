@@ -441,11 +441,12 @@ static public void load(String scriptbase) throws IOException, ClassNotFoundExce
 static public void load(String scriptbase, boolean failIfNotFound) throws IOException, ClassNotFoundException{
 	String classfile = scriptbase + LOADER_SUFFIX + ".class";
 	String cljfile = scriptbase + ".clj";
+	String cljcfile = scriptbase + ".cljc";
 	String scriptfile = cljfile;
 	URL classURL = getResource(baseLoader(),classfile);
 	URL cljURL = getResource(baseLoader(), scriptfile);
 	if(cljURL == null) {
-		scriptfile = scriptbase + ".cljc";
+		scriptfile = cljcfile;
 		cljURL = getResource(baseLoader(), scriptfile);
 	}
 	boolean loaded = false;
@@ -474,7 +475,7 @@ static public void load(String scriptbase, boolean failIfNotFound) throws IOExce
 			loadResourceScript(RT.class, scriptfile);
 	}
 	else if(!loaded && failIfNotFound)
-		throw new FileNotFoundException(String.format("Could not locate %s or %s on classpath.%s", classfile, cljfile,
+		throw new FileNotFoundException(String.format("Could not locate %s, %s or %s on classpath.%s", classfile, cljfile, cljcfile,
 			scriptbase.contains("_") ? " Please check that namespaces with dashes use underscores in the Clojure file name." : ""));
 }
 
@@ -1595,7 +1596,7 @@ static public double uncheckedDoubleCast(double x){
 }
 
 static public IPersistentMap map(Object... init){
-	if(init == null)
+	if(init == null || init.length == 0)
 		return PersistentArrayMap.EMPTY;
 	else if(init.length <= PersistentArrayMap.HASHTABLE_THRESHOLD)
 		return PersistentArrayMap.createWithCheck(init);

@@ -5631,7 +5631,11 @@ public static class FnMethod extends ObjMethod{
 		Label callLabel = gen.mark();
 		gen.visitLineNumber(line, callLabel);
 		gen.invokeStatic(objx.objtype, ms);
-		gen.box(returnType);
+		if(Type.LONG_TYPE.equals(returnType) || Type.DOUBLE_TYPE.equals(returnType)) {
+			gen.valueOf(returnType);
+		} else {
+			gen.box(returnType);
+		}
 
 
 		gen.returnValue();
@@ -5729,7 +5733,12 @@ public static class FnMethod extends ObjMethod{
 			HostExpr.emitUnboxArg(fn, gen, argclasses[i]);
 			}
 		gen.invokeInterface(Type.getType("L"+prim+";"), ms);
-		gen.box(getReturnType());
+		Type targetReturnType = getReturnType();
+		if(Type.LONG_TYPE.equals(targetReturnType) || Type.DOUBLE_TYPE.equals(targetReturnType)) {
+			gen.valueOf(targetReturnType);
+		} else {
+			gen.box(targetReturnType);
+		}
 
 
 		gen.returnValue();
@@ -6956,11 +6965,14 @@ static public class CompilerException extends RuntimeException implements IExcep
 	public String toString(){
 		Throwable cause = getCause();
 		if(cause != null) {
-			final String delim = (RT.get(data, ERR_PHASE) == PHASE_MACROEXPAND && isSpecError(cause)) ? " " : "\n";
-			if(RT.get(data, ERR_PHASE) == PHASE_MACROEXPAND && ! isMacroSyntaxCheck(cause)) {
-				return String.format("%s%sCause: %s %s", getMessage(), delim, cause.getClass().getSimpleName(), cause.getMessage());
+			if(RT.get(data, ERR_PHASE) == PHASE_MACROEXPAND) {
+				if(isSpecError(cause)) {
+					return String.format("%s", getMessage());
+				} else {
+					return String.format("%s%n%s", getMessage(), cause.getMessage());
+				}
 			} else {
-				return String.format("%s%sCause: %s", getMessage(), delim, cause.getMessage());
+				return String.format("%s%n%s", getMessage(), cause.getMessage());
 			}
 		} else {
 			return getMessage();
@@ -7505,7 +7517,14 @@ static public Object maybeResolveIn(Namespace n, Symbol sym) {
 	else if(sym.name.indexOf('.') > 0 && !sym.name.endsWith(".") 
 			|| sym.name.charAt(0) == '[')
 		{
-		return RT.classForName(sym.name);
+		try {
+			return RT.classForName(sym.name);
+		} catch (Exception e) {
+			if (e instanceof ClassNotFoundException)
+				return null;
+			else
+				return Util.sneakyThrow(e);
+			}
 		}
 	else if(sym.equals(NS))
 			return RT.NS_VAR;

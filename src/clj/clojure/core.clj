@@ -2691,8 +2691,8 @@
   {:added "1.0"
    :static true}
   [pred coll]
-    (when (seq coll)
-      (or (pred (first coll)) (recur pred (next coll)))))
+    (when-let [s (seq coll)]
+      (or (pred (first s)) (recur pred (next s)))))
 
 (def
  ^{:tag Boolean
@@ -3766,15 +3766,26 @@
   Returns a vector containing the object read and the (whitespace-trimmed) string read."
   {:added "1.10"}
   ([] (read+string *in*))
-  ([^clojure.lang.LineNumberingPushbackReader stream & args]
-     (try
-       (.captureString stream)
-       (let [o (apply read stream args)
-             s (.trim (.getString stream))]
-         [o s])       
-       (catch Throwable ex
-         (.getString stream)
-         (throw ex)))))
+  ([stream] (read+string stream true nil))
+  ([stream eof-error? eof-value] (read+string stream eof-error? eof-value false))
+  ([^clojure.lang.LineNumberingPushbackReader stream eof-error? eof-value recursive?]
+   (try
+     (.captureString stream)
+     (let [o (read stream eof-error? eof-value recursive?)
+           s (.trim (.getString stream))]
+       [o s])
+     (catch Throwable ex
+       (.getString stream)
+       (throw ex))))
+  ([opts ^clojure.lang.LineNumberingPushbackReader stream]
+   (try
+     (.captureString stream)
+     (let [o (read opts stream)
+           s (.trim (.getString stream))]
+       [o s])
+     (catch Throwable ex
+       (.getString stream)
+       (throw ex)))))
 
 (defn read-line
   "Reads the next line from stream that is the current value of *in* ."
@@ -4783,6 +4794,22 @@
   [ex]
   (when (instance? IExceptionInfo ex)
     (.getData ^IExceptionInfo ex)))
+
+(defn ex-message
+  "Returns the message attached to ex if ex is a Throwable.
+  Otherwise returns nil."
+  {:added "1.10"}
+  [ex]
+  (when (instance? Throwable ex)
+    (.getMessage ^Throwable ex)))
+
+(defn ex-cause
+  "Returns the cause of ex if ex is a Throwable.
+  Otherwise returns nil."
+  {:added "1.10"}
+  [ex]
+  (when (instance? Throwable ex)
+    (.getCause ^Throwable ex)))
 
 (defmacro assert
   "Evaluates expr and throws an exception if it does not evaluate to
@@ -7086,7 +7113,7 @@
 
 (defn flatten
   "Takes any nested combination of sequential things (lists, vectors,
-  etc.) and returns their contents as a single, flat sequence.
+  etc.) and returns their contents as a single, flat lazy sequence.
   (flatten nil) returns an empty sequence."
   {:added "1.2"
    :static true}
@@ -7149,7 +7176,7 @@
         (let [fst (first s)
               fv (f fst)
               run (cons fst (take-while #(= fv (f %)) (next s)))]
-          (cons run (partition-by f (seq (drop (count run) s)))))))))
+          (cons run (partition-by f (lazy-seq (drop (count run) s)))))))))
 
 (defn frequencies
   "Returns a map from distinct items in coll to the number of times
@@ -7801,6 +7828,21 @@
 (defonce ^:private tapset (atom #{}))
 (defonce ^:private ^java.util.concurrent.ArrayBlockingQueue tapq (java.util.concurrent.ArrayBlockingQueue. 1024))
 
+(defonce ^:private tap-loop
+  (delay
+   (doto (Thread.
+          #(let [t (.take tapq)
+                 x (if (identical? ::tap-nil t) nil t)
+                 taps @tapset]
+             (doseq [tap taps]
+               (try
+                 (tap x)
+                 (catch Throwable ex)))
+             (recur))
+          "clojure.core/tap-loop")
+     (.setDaemon true)
+     (.start))))
+
 (defn add-tap
   "adds f, a fn of one argument, to the tap set. This function will be called with anything sent via tap>.
   This function may (briefly) block (e.g. for streams), and will never impede calls to tap>,
@@ -7808,11 +7850,12 @@
   Remember f in order to remove-tap"
   {:added "1.10"}
   [f]
+  (force tap-loop)
   (swap! tapset conj f)
   nil)
 
 (defn remove-tap
-  "remove f from the tap set the tap set."
+  "Remove f from the tap set."
   {:added "1.10"}
   [f]
   (swap! tapset disj f)
@@ -7823,18 +7866,5 @@
   false if not (dropped)."
   {:added "1.10"}
   [x]
+  (force tap-loop)
   (.offer tapq (if (nil? x) ::tap-nil x)))
-
-(defonce ^:private tap-loop
-  (doto (Thread.
-         #(let [t (.take tapq)
-                x (if (identical? ::tap-nil t) nil t)
-                taps @tapset]
-            (doseq [tap taps]
-              (try
-                (tap x)
-                (catch Throwable ex)))
-            (recur))
-         "clojure.core/tap-loop")
-    (.setDaemon true)
-    (.start)))

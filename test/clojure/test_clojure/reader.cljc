@@ -537,7 +537,7 @@
         (is (not= (read-string s) (read-string s2)))))
     (binding [*data-readers* {'inst read-instant-date}]
       (testing "read-instant-date should truncate at milliseconds"
-        (is (= (read-string s) (read-string s2)) (read-string s3)))))
+        (is (= (read-string s) (read-string s2) (read-string s3))))))
   (let [s "#inst \"2010-11-12T03:14:15.123+05:00\""
         s2 "#inst \"2010-11-11T22:14:15.123Z\""]
     (binding [*data-readers* {'inst read-instant-date}]
@@ -755,3 +755,16 @@
   (is (thrown-with-msg? Exception #"Invalid token" (edn/read-string "##5")))
   (is (thrown-with-msg? Exception #"Unknown symbolic value" (read-string "##Foo")))
   (is (thrown-with-msg? Exception #"Unknown symbolic value" (edn/read-string "##Foo"))))
+
+(defn str->lnpr
+  [s]
+  (-> s (java.io.StringReader.) (clojure.lang.LineNumberingPushbackReader.)))
+
+(deftest test-read+string
+  (let [[r s] (read+string (str->lnpr "[:foo  100]"))]
+    (is (= [:foo 100] r))
+    (is (= "[:foo  100]" s)))
+
+  (let [[r s] (read+string {:read-cond :allow :features #{:y}} (str->lnpr "#?(:x :foo :y :bar)"))]
+    (is (= :bar r))
+    (is (= "#?(:x :foo :y :bar)" s))))
