@@ -17,20 +17,32 @@ public class FnLoaderThunk extends RestFn{
 final ClassLoader loader;
 final String fnClassName;
 final Compiler.ObjExpr expr;
+final IPersistentMap meta;
 IFn fn;
 
 public FnLoaderThunk(String fnClassName){
 	this.loader = (ClassLoader) RT.FN_LOADER_VAR.get();
 	this.fnClassName = fnClassName;
 	this.expr = null;
-	fn = null;
+	this.fn = null;
+	this.meta = null;
 }
+
+public FnLoaderThunk(String fnClassName, ClassLoader loader, IFn fn, IPersistentMap meta){
+	this.loader = loader;
+	this.fnClassName = fnClassName;
+	this.expr = null;
+	this.fn = fn;
+	this.meta = meta;
+}
+
 
 public FnLoaderThunk(Compiler.ObjExpr expr){
 	this.loader = (ClassLoader) Compiler.LOADER.get();
 	this.fnClassName = null;
 	this.expr = expr;
-	fn = null;
+	this.fn = null;
+	this.meta = null;
 }
 
 public Object invoke(Object arg1) {
@@ -89,10 +101,10 @@ public int getRequiredArity(){
 }
 
 public IObj withMeta(IPersistentMap meta){
-	return this;
+	return new FnLoaderThunk(fnClassName, loader, fn, meta);
 }
 
 public IPersistentMap meta(){
-	return null;
+	return meta;
 }
 }
