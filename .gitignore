@@ -1,5 +1,6 @@
 *.jar
 target
+clojure.iml
 clojure.iws
 clojure.ipr
 nbproject/private/
