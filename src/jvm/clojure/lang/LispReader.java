@@ -143,14 +143,24 @@ static void unread(PushbackReader r, int ch) {
 			}
 }
 
-public static class ReaderException extends RuntimeException{
+public static class ReaderException extends RuntimeException implements IExceptionInfo{
 	public final int line;
 	public final int column;
+	public final Object data;
+
+    final static public String ERR_NS = "clojure.error";
+	final static public Keyword ERR_LINE = Keyword.intern(ERR_NS, "line");
+	final static public Keyword ERR_COLUMN = Keyword.intern(ERR_NS, "column");
 
 	public ReaderException(int line, int column, Throwable cause){
 		super(cause);
 		this.line = line;
 		this.column = column;
+		this.data = RT.map(ERR_LINE, line, ERR_COLUMN, column);
+	}
+
+	public IPersistentMap getData(){
+		return (IPersistentMap)data;
 	}
 }
 
@@ -954,7 +964,8 @@ public static class MetaReader extends AFn{
 			{
 			if(line != -1 && o instanceof ISeq)
 				{
-				meta = ((IPersistentMap) meta).assoc(RT.LINE_KEY, line).assoc(RT.COLUMN_KEY, column);
+				meta = RT.assoc(meta, RT.LINE_KEY, RT.get(meta, RT.LINE_KEY, line));
+				meta = RT.assoc(meta, RT.COLUMN_KEY, RT.get(meta,RT.COLUMN_KEY, column));
 				}
 			if(o instanceof IReference)
 				{
@@ -1236,7 +1247,10 @@ public static class ListReader extends AFn{
 //		IObj s = (IObj) RT.seq(list);
 		if(line != -1)
 			{
-			return s.withMeta(RT.map(RT.LINE_KEY, line, RT.COLUMN_KEY, column));
+			Object meta = RT.meta(s);
+			meta = RT.assoc(meta, RT.LINE_KEY, RT.get(meta, RT.LINE_KEY, line));
+			meta = RT.assoc(meta, RT.COLUMN_KEY, RT.get(meta,RT.COLUMN_KEY, column));
+			return s.withMeta((IPersistentMap)meta);
 			}
 		else
 			return s;

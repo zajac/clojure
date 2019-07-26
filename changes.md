@@ -1,5 +1,61 @@
 <!-- -*- mode: markdown ; mode: visual-line ; coding: utf-8 -*- -->
 
+# Changes to Clojure in Version 1.10.1
+
+## 1 Features and Major Changes
+
+### 1.1 Workaround Java Performance Regression When Loading user.clj
+
+Recent builds of Java 8 (u202), 11 (11.0.2), 12, and 13 included
+some changes that [drastically affect](https://bugs.openjdk.java.net/browse/JDK-8219233)
+optimization performance of calls from static initializers to static fields.
+Clojure provides support for loading code on startup from a user.clj file and this
+occurred in the static initializer of the Clojure runtime (RT) class and was thus
+affected.
+
+This issue may eventually be resolved in Java, but in Clojure we have
+modified runtime initialization to avoid loading user.clj in a static
+initializer, which mitigates the case where this caused a performance
+degradation.
+
+* [CLJ-2484](https://clojure.atlassian.net/browse/CLJ-2484)
+  Significant performance regression of code loaded in user.clj in Java 8u202/11.0.
+
+### 1.2 clojure.main Error Reporting
+
+clojure.main is frequently used as a Clojure program launcher by external tools.
+Previously, uncaught exceptions would be automatically printed by the JVM, which
+would also print the stack trace.
+
+This release will now catch exceptions and use the same error triage and printing
+functionality as the Clojure repl. The full stack trace, ex-info, and other
+information will be printed to a target specified by the configuration.
+
+The three available error targets are:
+
+* file - write to a temp file (default, falls back to stderr)
+* stderr - write to stderr stream
+* none - don't write
+
+These error targets can be specified either as options to clojure.main, or as
+Java system properties (flags take precedence). When invoking clojure.main
+(or using the clj tool), use `--report <target>`. For Java system property,
+use `-Dclojure.main.report=<target>`.
+
+* [CLJ-2463](https://clojure.atlassian.net/browse/CLJ-2463)
+  Improve error printing in clojure.main with -m, -e, etc
+* [CLJ-2497](https://clojure.atlassian.net/browse/CLJ-2497)
+  Put error report location on its own line
+* [CLJ-2504](https://clojure.atlassian.net/browse/CLJ-2504)
+  Provide more options for error reporting in clojure.main
+
+## 2 Fixes
+
+* [CLJ-2499](http://dev.clojure.org/jira/browse/CLJ-2499)
+  Some compiler expr evals report as wrong error phase
+* [CLJ-2491](https://clojure.atlassian.net/browse/CLJ-2491)
+  Updated fragile tests so Clojure test suite runs on Java 12
+
 # Changes to Clojure in Version 1.10
 
 ## 1 Compatibility and Dependencies
@@ -24,6 +80,8 @@ Clojure 1.10 now requires Java 8 or above. There were a number of updates relate
   Add type hint to address reflection ambiguity in JDK 11
 * [CLJ-2375](http://dev.clojure.org/jira/browse/CLJ-2375)
   Fix usage of deprecated JDK apis
+* [CLJ-2414](http://dev.clojure.org/jira/browse/CLJ-2414)
+  Regression in reflectively finding default methods
 
 ### 1.2 Dependencies
 
@@ -36,34 +94,52 @@ Updated dependencies:
 
 ### 2.1 Error messages
 
-Clojure errors can occur in several distinct "phases" - read, macroexpand, compile, eval, and print. Clojure (and the REPL) now identify these phases in the exception and/or the message.
+Clojure errors can occur in several distinct "phases" - reading source, macroexpansion, compilation, execution, and result printing. Clojure (and the REPL) now identify these phases in the exception and the message.
 
-The read/macroexpand/compile phases produce a CompilerException and indicate the location in the caller source code where the problem occurred (previously macroexpansion reported the error in the macroexpansion stack). CompilerException now implements IExceptionInfo and ex-data will report exception data including the optional keys:
+The read/macroexpand/compile phases produce a CompilerException and indicate the location in the caller source code where the problem occurred (previously macroexpansion reported the error in the macroexpansion stack). CompilerException now implements IExceptionInfo and ex-data will report exception data including the following (optional) keys:
 
-* :clojure.error/source - name of the source file
+* :clojure.error/phase - phase (:read-source, :macro-syntax-check, :macroexpansion, :compile-syntax-check, :compilation, :execution, :read-eval-result, :print-eval-result)
+* :clojure.error/source - source file
 * :clojure.error/line - line in source file
 * :clojure.error/column - column of line in source file
-* :clojure.error/phase - phase (:read, :macroexpand, :compile)
 * :clojure.error/symbol - symbol being macroexpanded or compiled
+* :clojure.error/class - cause exception class symbol
+* :clojure.error/cause - cause exception message
+* :clojure.error/spec - explain-data for spec errors
 
-clojure.main also contains a new function `ex-str` that can be used by external tools to get a repl message for a CompilerException to match the clojure.main repl behavior.
+clojure.main also contains two new functions: `ex-triage` and `ex-str` that can be used by external tools to mimic some or all of the Clojure repl reporting. `ex-triage` takes the output of `Throwable->map` and produces a concise analysis of the error phase, cause, etc (same keys as above). `ex-str` takes that analysis data and produces a message to print at the repl.
 
 * [CLJ-2373](http://dev.clojure.org/jira/browse/CLJ-2373)
   Detect phase and overhaul exception message and printing
-* [CLJ-2414](http://dev.clojure.org/jira/browse/CLJ-2414)
-  Detect phase and overhaul exception message and printing
+* [CLJ-2415](http://dev.clojure.org/jira/browse/CLJ-2415)
+  Error cause should always be on 2nd line of error message
+* [CLJ-2420](http://dev.clojure.org/jira/browse/CLJ-2420)
+  Refinement of error phases, `ex-triage`, execution error line reporting
+* [CLJ-2427](http://dev.clojure.org/jira/browse/CLJ-2427)
+  CompilerException.toString() can throw if making message during initialization
+* [CLJ-2430](http://dev.clojure.org/jira/browse/CLJ-2430)
+  Elevate phase in throwable data and conveyance for prepl
+* [CLJ-2435](http://dev.clojure.org/jira/browse/CLJ-2435)
+  Include root cause class name in compilation and macroexpansion error phases
+* [CLJ-2438](http://dev.clojure.org/jira/browse/CLJ-2438)
+  Demunge source symbol in execution error messages
 
-### 2.2 tap
+
+### 2.2 Protocol extension by metadata
+
+`defprotocol` has a new option `:extend-via-metadata`. When :extend-via-metadata is true, values can extend protocols by adding metadata where keys are fully-qualified protocol function symbols and values are function implementations. Protocol implementations are checked first for direct definitions (defrecord, deftype, reify), then metadata definitions, then external extensions (extend, extend-type, extend-protocol).
+
+### 2.3 tap
 
 tap is a shared, globally accessible system for distributing a series of informational or diagnostic values to a set of (presumably effectful) handler functions. It can be used as a better debug prn, or for facilities like logging etc.
 
 `tap>` sends a value to the set of taps. Taps can be added with `add-tap` and will be called with any value sent to `tap>`. The tap function may (briefly) block (e.g. for streams) and will never impede calls to `tap>`, but blocking indefinitely may cause tap values to be dropped. If no taps are registered, `tap>` discards. Remove taps with `remove-tap`.
 
-### 2.3 Read string capture mode
+### 2.4 Read string capture mode
 
 `read+string` is a new function that mimics `read` but also captures the string that is read and returns both the read value and the (whitespace-trimmed) read string. `read+string` requires a LineNumberingPushbackReader.
 
-### 2.4 prepl (alpha)
+### 2.5 prepl (alpha)
 
 prepl is a new stream-based REPL with structured output (suitable for programmatic use). Forms are read from the reader, evaluated, and return data maps for the return value (if successful), output to `*out*` (possibly many), output to `*err*` (possibly many), or tap> values (possibly many).
 
@@ -75,11 +151,15 @@ New functions in clojure.core.server:
 
 prepl is alpha and subject to change.
 
-### 2.5 datafy and nav
+### 2.6 datafy and nav
 
 clojure.datafy is a facility for object to data transformation. The `datafy` and `nav` functions can be used used to transform and (lazily) navigate through object graphs. The data transformation process can be influenced by consumers using protocols or metadata.
 
 datafy is alpha and subject to change.
+
+* [CLJ-2429](http://dev.clojure.org/jira/browse/CLJ-2429)
+  Datafy JavaReflector
+
 
 ### 2.6 Other new functions in core
 
@@ -91,6 +171,11 @@ These functions have been added to match existing functions in ClojureScript to 
 This function has been added to construct a PrintWriter implementation whose behavior on flush and close is provided as functions:
 
 * `PrintWriter-on` - create a PrintWriter from flush-fn and close-fn
+
+The following function has been added, extending `resolve`:
+
+* `requiring-resolve` - resolve or, if needed, require symbol's namespace, then resolve
+* `serialized-require` - like `require` but for use in asynchronous load uses
 
 ## 3 Enhancements
 
@@ -108,8 +193,6 @@ This function has been added to construct a PrintWriter implementation whose beh
   Mention cljc in error when require fails
 * [CLJ-1130](http://dev.clojure.org/jira/browse/CLJ-1130)
   Improve error message when unable to match static method
-* [CLJ-2415](http://dev.clojure.org/jira/browse/CLJ-2415)
-  Error cause should always be on 2nd line of error message
 
 ### 3.2 Documentation
 
@@ -125,22 +208,25 @@ This function has been added to construct a PrintWriter implementation whose beh
 ### 3.3 Performance
 
 * [CLJ-1654](http://dev.clojure.org/jira/browse/CLJ-1654)
-  Reuse seq in some
+  Reuse seq in `some`
 * [CLJ-1366](http://dev.clojure.org/jira/browse/CLJ-1366)
   The empty map literal is read as a different map each time
 * [CLJ-2362](http://dev.clojure.org/jira/browse/CLJ-2362)
-  with-meta should return identity when new meta is identical to prior
+  `with-meta` should return identity when new meta is identical to prior
 
 ### 3.4 Other enhancements
 
+* `symbol` can now take a var or a keyword argument
 * [CLJ-1209](http://dev.clojure.org/jira/browse/CLJ-1209)
   Print ex-data in clojure.test error reports
 * [CLJ-2163](http://dev.clojure.org/jira/browse/CLJ-2163)
   Add test for var serialization
+* [CLJ-2417](http://dev.clojure.org/jira/browse/CLJ-2417)
+  `sort` and `sort-by` should retain meta
 
-## 3 Fixes
+## 4 Fixes
 
-### 3.1 Collections
+### 4.1 Collections
 
 * [CLJ-2297](http://dev.clojure.org/jira/browse/CLJ-2297)
   PersistentHashMap leaks memory when keys are removed with `without`
@@ -151,7 +237,7 @@ This function has been added to construct a PrintWriter implementation whose beh
 * [CLJ-2089](http://dev.clojure.org/jira/browse/CLJ-2089)
   Sorted colls with default comparator don’t check that first element is Comparable
 
-### 3.2 API
+### 4.2 API
 
 * [CLJ-2031](http://dev.clojure.org/jira/browse/CLJ-2031)
   clojure.walk/postwalk does not preserve MapEntry type objects
@@ -162,12 +248,14 @@ This function has been added to construct a PrintWriter implementation whose beh
 * [CLJ-1832](http://dev.clojure.org/jira/browse/CLJ-1832)
   unchecked-* functions have different behavior on primitive longs vs boxed Longs
 
-### 3.3 Other
+### 4.3 Other
 
 * [CLJ-1403](http://dev.clojure.org/jira/browse/CLJ-1403)
   ns-resolve might throw ClassNotFoundException but should return nil
 * [CLJ-2407](http://dev.clojure.org/jira/browse/CLJ-2407)
   Fix bugs in Clojure unit tests
+* [CLJ-1079](http://dev.clojure.org/jira/browse/CLJ-1079)
+  In reader, don't ignore explicit :line :col meta
 
 # Changes to Clojure in Version 1.9
 

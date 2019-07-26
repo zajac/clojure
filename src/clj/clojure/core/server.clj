@@ -184,6 +184,10 @@
     :init repl-init
     :read repl-read))
 
+(defn- ex->data
+  [ex phase]
+  (assoc (Throwable->map ex) :phase phase))
+
 (defn prepl
   "a REPL with structured output (for programs)
   reads forms to eval from in-reader (a LineNumberingPushbackReader)
@@ -195,6 +199,7 @@
    :ns ns-name-string
    :ms long ;;eval time in milliseconds
    :form string ;;iff successfully read
+   :clojure.error/phase (:execution et al per clojure.main/ex-triage) ;;iff error occurred
   }
   {:tag :out
    :val string} ;chars from during-eval *out*
@@ -241,11 +246,15 @@
                               true)))
                         (catch Throwable ex
                           (set! *e ex)
-                          (out-fn {:tag :ret :val (Throwable->map ex) :ns (str (.name *ns*)) :form s})
+                          (out-fn {:tag :ret :val (ex->data ex (or (-> ex ex-data :clojure.error/phase) :execution))
+                                   :ns (str (.name *ns*)) :form s
+                                   :exception true})
                           true)))
                     (catch Throwable ex
                       (set! *e ex)
-                      (out-fn {:tag :ret :val (Throwable->map ex) :ns (str (.name *ns*))})
+                      (out-fn {:tag :ret :val (ex->data ex :read-source)
+                               :ns (str (.name *ns*))
+                               :exception true})
                       true))
               (recur)))
           (finally
@@ -272,11 +281,16 @@
         out *out*
         lock (Object.)]
     (prepl *in*
-           #(binding [*out* out, *flush-on-newline* true, *print-readably* true]
-              (locking lock
-                (prn (cond-> %1
-                             (#{:ret :tap} (:tag %1))
-                             (assoc :val (valf (:val %1))))))))))
+           (fn [m]
+             (binding [*out* out, *flush-on-newline* true, *print-readably* true]
+               (locking lock
+                 (prn (if (#{:ret :tap} (:tag m))
+                        (try
+                          (assoc m :val (valf (:val m)))
+                          (catch Throwable ex
+                            (assoc m :val (ex->data ex :print-eval-result)
+                                     :exception true)))
+                        m))))))))
 
 (defn remote-prepl
   "Implements a prepl on in-reader and out-fn by forwarding to a
@@ -290,7 +304,7 @@
   Alpha, subject to change."
   {:added "1.10"}
   [^String host port ^Reader
-  in-reader out-fn & {:keys [valf readf] :or {valf read-string, readf #(read %1 false %2)}}]
+   in-reader out-fn & {:keys [valf readf] :or {valf read-string, readf #(read %1 false %2)}}]
   (let [valf (resolve-fn valf)
         readf (resolve-fn readf)
         ^long port (if (string? port) (Integer/valueOf ^String port) port)
@@ -302,9 +316,14 @@
             (try (loop []
                    (let [{:keys [tag val] :as m} (readf rd EOF)]
                      (when-not (identical? m EOF)
-                       (out-fn (cond-> m
-                                       (#{:ret :tap} tag)
-                                       (assoc :val (try (valf val) (catch Throwable ex val)))))
+                       (out-fn
+                        (if (#{:ret :tap} tag)
+                          (try
+                            (assoc m :val (valf val))
+                            (catch Throwable ex
+                              (assoc m :val (ex->data ex :read-eval-result)
+                                       :exception true)))
+                          m))
                        (recur))))
                  (finally
                   (.close wr))))
