@@ -2310,19 +2310,13 @@
   value is available. See also - realized?."
   {:added "1.0"
    :static true}
-  ([ref]
-   (cond
-     (instance? clojure.lang.IDeref ref) (.deref ^clojure.lang.IDeref ref)
-     (instance? java.util.function.Supplier ref) (.get ^java.util.function.Supplier ref)
-     (instance? java.util.concurrent.Future ref) (deref-future ref)
-     (nil? ref) (throw (NullPointerException.))
-     :else (throw (IllegalArgumentException. (str (.getClass ref) " is not derefable")))))
+  ([ref] (if (instance? clojure.lang.IDeref ref)
+           (.deref ^clojure.lang.IDeref ref)
+           (deref-future ref)))
   ([ref timeout-ms timeout-val]
-   (cond
-     (instance? clojure.lang.IBlockingDeref ref) (.deref ^clojure.lang.IBlockingDeref ref timeout-ms timeout-val)
-     (instance? java.util.concurrent.Future ref) (deref-future ref timeout-ms timeout-val)
-     (nil? ref) (throw (NullPointerException.))
-     :else (throw (IllegalArgumentException. (str (.getClass ref) " is not derefable"))))))
+     (if (instance? clojure.lang.IBlockingDeref ref)
+       (.deref ^clojure.lang.IBlockingDeref ref timeout-ms timeout-val)
+       (deref-future ref timeout-ms timeout-val))))
 
 (defn atom
   "Creates and returns an Atom with an initial value of x and zero or
