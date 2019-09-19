@@ -172,7 +172,7 @@ public static Var create(Object root){
 	return new Var(null, null, root);
 }
 
-Var(Namespace ns, Symbol sym){
+public Var(Namespace ns, Symbol sym){
 	this.ns = ns;
 	this.sym = sym;
 	this.threadBound = new AtomicBoolean(false);
