@@ -26,6 +26,8 @@ public class Namespace extends AReference implements Serializable {
 
     final static ConcurrentHashMap<Symbol, Namespace> namespaces = new ConcurrentHashMap<Symbol, Namespace>();
 
+    public boolean isDynamicallyLinked = false;
+
     public String toString() {
         return name.toString();
     }
@@ -100,7 +102,7 @@ public class Namespace extends AReference implements Serializable {
         String loaderName = varLoaderClassName(var.toSymbol());
         if (loaderName != null) {
             try {
-                Class aClass = Class.forName(loaderName);
+                Class aClass = RT.baseLoader() == null ? null : RT.classForName(loaderName);
                 if (aClass != null) {
                     Object staticFnInstance = aClass.newInstance();
                     var.bindRoot(staticFnInstance);
@@ -108,6 +110,7 @@ public class Namespace extends AReference implements Serializable {
                     var.switchPoint = new SwitchPoint();
                 }
             } catch (Throwable e) {
+                System.out.println("var-initializer for " + var + " not found");
 //                e.printStackTrace();
             }
         }
@@ -129,7 +132,7 @@ public class Namespace extends AReference implements Serializable {
         }
 
         if (o instanceof Var && ((Var) o).ns == this) {
-            if (o == v) {
+            if (o == v && this.isDynamicallyLinked) {
                 initVar(v);
             }
             return (Var) o;

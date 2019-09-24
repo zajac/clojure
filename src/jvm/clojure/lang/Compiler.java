@@ -7221,6 +7221,9 @@ public class Compiler implements Opcodes {
 
         try {
             //generate loader class
+
+            String nsName = sourcePath.replace(File.separator, ".").substring(0, sourcePath.lastIndexOf('.')).replace('_', '-');
+
             ObjExpr objx = new ObjExpr(null);
             objx.internalName = sourcePath.replace(File.separator, "/").substring(0, sourcePath.lastIndexOf('.'))
                     + RT.LOADER_SUFFIX;
@@ -7237,7 +7240,12 @@ public class Compiler implements Opcodes {
                     null,
                     cv);
             gen.visitCode();
-
+            if (RT.booleanCast(getCompilerOption(dynamicLinkingKey))) {
+                compile1(gen, objx,
+                        RT.list(Symbol.intern("set!"),
+                                RT.list(Symbol.intern(".-isDynamicallyLinked"), (RT.list(Symbol.intern("clojure.lang.Namespace/findOrCreate"), RT.list(Symbol.intern("quote"), Symbol.intern(nsName))))),
+                                Boolean.TRUE));
+            }
             Object readerOpts = readerOpts(sourceName);
             for (Object r = LispReader.read(pushbackReader, false, EOF, false, readerOpts); r != EOF;
                  r = LispReader.read(pushbackReader, false, EOF, false, readerOpts)) {
