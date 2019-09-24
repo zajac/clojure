@@ -605,7 +605,7 @@ public class Compiler implements Opcodes {
                         initProvided &&
                         isConstantMeta(mm)) {
                     Var.pushThreadBindings(RT.mapUniqueKeys(VAR_META_FORM, mm));
-                    Expr init = analyze(C.EXPRESSION, RT.third(form), v.sym.name);
+                    Expr init = analyze(context, RT.third(form), v.sym.name);
                     Var.popThreadBindings();
                     if (init instanceof FnExpr && ((FnExpr) init).canBeDirect) {
                         Expr meta = mm.count() == 0 ? null : analyze(context == C.EVAL ? context : C.EXPRESSION, mm);
