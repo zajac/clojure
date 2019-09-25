@@ -7241,10 +7241,11 @@ public class Compiler implements Opcodes {
                     cv);
             gen.visitCode();
             if (RT.booleanCast(getCompilerOption(dynamicLinkingKey))) {
+                ISeq nsExpr = RT.list(Symbol.intern("clojure.lang.Namespace/findOrCreate"),
+                        RT.list(Symbol.intern("quote"), Symbol.intern(nsName)));
                 compile1(gen, objx,
-                        RT.list(Symbol.intern("set!"),
-                                RT.list(Symbol.intern(".-isDynamicallyLinked"), (RT.list(Symbol.intern("clojure.lang.Namespace/findOrCreate"), RT.list(Symbol.intern("quote"), Symbol.intern(nsName))))),
-                                Boolean.TRUE));
+                        RT.list(Symbol.intern(".dynamicallyLinked"),
+                                nsExpr));
             }
             Object readerOpts = readerOpts(sourceName);
             for (Object r = LispReader.read(pushbackReader, false, EOF, false, readerOpts); r != EOF;

@@ -157,7 +157,11 @@ public final class Var extends ARef implements IFn, IRef, Settable, Serializable
     public static Var internPrivate(String nsName, String sym) {
         Namespace ns = Namespace.findOrCreate(Symbol.intern(nsName));
         Var ret = intern(ns, Symbol.intern(sym));
-        ret.setMeta(privateMeta);
+        if (ret.meta() == null) {
+            ret.setMeta(privateMeta);
+        } else {
+            ret.meta().assoc(privateKey, Boolean.TRUE);
+        }
         return ret;
     }
 

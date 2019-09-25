@@ -51,6 +51,16 @@ public class Namespace extends AReference implements Serializable {
         return mappings.get();
     }
 
+    public void dynamicallyLinked() {
+        isDynamicallyLinked = true;
+        for (Object mapping : getMappings()) {
+            Object x = ((MapEntry) mapping).val();
+            if (x instanceof Var) {
+                initVar((Var)x);
+            }
+        }
+    }
+
     static final public IPersistentMap CHAR_MAP =
             PersistentHashMap.create('-', "_",
 //		                         '.', "_DOT_",
@@ -95,23 +105,23 @@ public class Namespace extends AReference implements Serializable {
         if (symbol.name == null) {
             return null;
         }
-        return symbol.ns.replace('-', '_').replace('.', '/') + "$" + munge(symbol.name);
+        return symbol.ns.replace('-', '_') + "$" + munge(symbol.name);
     }
 
     public static void initVar(Var var) {
-        String loaderName = varLoaderClassName(var.toSymbol());
-        if (loaderName != null) {
-            try {
-                Class aClass = RT.baseLoader() == null ? null : RT.classForName(loaderName);
-                if (aClass != null) {
-                    Object staticFnInstance = aClass.newInstance();
-                    var.bindRoot(staticFnInstance);
-                    var.setMeta((IPersistentMap) ((VarInit) staticFnInstance).varMeta());
-                    var.switchPoint = new SwitchPoint();
+        if (!var.isBound()) {
+            String loaderName = varLoaderClassName(var.toSymbol());
+            if (loaderName != null) {
+                try {
+                    Class aClass = RT.classForName(loaderName);
+                    if (aClass != null) {
+                        Object staticFnInstance = aClass.newInstance();
+                        var.bindRoot(staticFnInstance);
+                        var.setMeta((IPersistentMap) ((VarInit) staticFnInstance).varMeta());
+                        var.switchPoint = new SwitchPoint();
+                    }
+                } catch (Throwable ignore) {
                 }
-            } catch (Throwable e) {
-                System.out.println("var-initializer for " + var + " not found");
-//                e.printStackTrace();
             }
         }
     }
