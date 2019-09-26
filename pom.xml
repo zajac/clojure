@@ -34,7 +34,8 @@
   </scm>
 
   <properties>
-    <directlinking>true</directlinking>
+      <directlinking>true</directlinking>
+      <dynamiclinking>true</dynamiclinking>
   </properties>
 
   <dependencies>
