@@ -7,3 +7,4 @@ nbproject/private/
 maven-classpath
 maven-classpath.properties
 .idea/
+*.iml
