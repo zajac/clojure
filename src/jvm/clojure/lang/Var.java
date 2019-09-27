@@ -14,7 +14,7 @@ package clojure.lang;
 
 import java.io.ObjectStreamException;
 import java.io.Serializable;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.lang.invoke.SwitchPoint;
 
 
 public final class Var extends ARef implements IFn, IRef, Settable, Serializable{
@@ -90,6 +90,7 @@ transient volatile boolean threadBound;
 //transient final AtomicBoolean threadBound;
 public final Symbol sym;
 public final Namespace ns;
+public SwitchPoint switchPoint = new SwitchPoint();
 
 //IPersistentMap _meta;
 

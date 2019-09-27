@@ -97,6 +97,16 @@ static final Keyword redefKey = Keyword.intern(null, "redef");
 static final Symbol NS = Symbol.intern("ns");
 static final Symbol IN_NS = Symbol.intern("in-ns");
 
+static final String BOOTSTRAP_METHOD_SIGNATURE = "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/invoke/CallSite;";
+
+static final String DEREF_SIGNATURE = "()Ljava/lang/Object;";
+static final Handle BOOTSTRAP_DEREF_HANDLE = new Handle(H_INVOKESTATIC, "clojure/lang/VarBootstrap", "bootstrapDeref", BOOTSTRAP_METHOD_SIGNATURE);
+
+static final String ACQUIRE_SIGANTURE = "()Lclojure/lang/Var;";
+static final Handle BOOTSTRAP_ACQUIRE_HANDLE = new Handle(H_INVOKESTATIC, "clojure/lang/VarBootstrap", "bootstrapAcquire", BOOTSTRAP_METHOD_SIGNATURE);
+
+
+
 //static final Symbol IMPORT = Symbol.intern("import");
 //static final Symbol USE = Symbol.intern("use");
 
@@ -481,7 +491,7 @@ static class DefExpr implements Expr{
 	}
 
 	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
-		objx.emitVar(gen, var);
+		objx.emitVar(gen, var, true);
 
 		if (shadowsCoreMapping)
 		{
@@ -694,7 +704,7 @@ public static class VarExpr implements Expr, AssignableExpr{
 
 	public void emitAssign(C context, ObjExpr objx, GeneratorAdapter gen,
 	                       Expr val){
-		objx.emitVar(gen, var);
+		objx.emitVar(gen, var, false);
 		val.emit(C.EXPRESSION, objx, gen);
 		gen.invokeVirtual(VAR_TYPE, setMethod);
 		if(context == C.STATEMENT)
@@ -714,7 +724,7 @@ public static class TheVarExpr implements Expr{
 	}
 
 	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
-		objx.emitVar(gen, var);
+		objx.emitVar(gen, var, false);
 		if(context == C.STATEMENT)
 			gen.pop();
 	}
@@ -3798,7 +3808,7 @@ static class InvokeExpr implements Expr{
 		gen.putStatic(objx.objtype, objx.cachedClassName(siteIndex),CLASS_TYPE); //target
 
 		gen.mark(callLabel); //target
-		objx.emitVar(gen, v);
+		objx.emitVar(gen, v, false);
 		gen.invokeVirtual(VAR_TYPE, Method.getMethod("Object getRawRoot()")); //target, proto-fn
 		gen.swap();
 		emitArgsAndCall(1, context,objx,gen);
@@ -5250,27 +5260,27 @@ static public class ObjExpr implements Expr{
 			gen.visitVarInsn(Type.getType(primc).getOpcode(Opcodes.ILOAD), lb.idx);
 	}
 
-	public void emitVar(GeneratorAdapter gen, Var var){
-		Integer i = (Integer) vars.valAt(var);
-		emitConstant(gen, i);
-		//gen.getStatic(fntype, munge(var.sym.toString()), VAR_TYPE);
+	public void emitVar(GeneratorAdapter gen, Var var, boolean forDef){
+            gen.invokeDynamic(
+                              "acquire",
+                              ACQUIRE_SIGANTURE,
+                              BOOTSTRAP_ACQUIRE_HANDLE,
+                              var.toSymbol().getNamespace(),
+                              var.toSymbol().getName());
+            
+            //gen.getStatic(fntype, munge(var.sym.toString()), VAR_TYPE);
 	}
 
 	final static Method varGetMethod = Method.getMethod("Object get()");
 	final static Method varGetRawMethod = Method.getMethod("Object getRawRoot()");
 
 	public void emitVarValue(GeneratorAdapter gen, Var v){
-		Integer i = (Integer) vars.valAt(v);
-		if(!v.isDynamic())
-			{
-			emitConstant(gen, i);
-			gen.invokeVirtual(VAR_TYPE, varGetRawMethod);
-			}
-		else
-			{
-			emitConstant(gen, i);
-			gen.invokeVirtual(VAR_TYPE, varGetMethod);
-			}
+		 gen.invokeDynamic(
+                        "deref",
+                        DEREF_SIGNATURE,
+                        BOOTSTRAP_DEREF_HANDLE,
+                        v.toSymbol().getNamespace(),
+                        v.toSymbol().getName());
 	}
 
 	public void emitKeyword(GeneratorAdapter gen, Keyword k){
@@ -7596,14 +7606,14 @@ static Var lookupVar(Symbol sym, boolean internNew) {
 }
 
 private static void registerVar(Var var) {
-	if(!VARS.isBound())
-		return;
-	IPersistentMap varsMap = (IPersistentMap) VARS.deref();
-	Object id = RT.get(varsMap, var);
-	if(id == null)
-		{
-		VARS.set(RT.assoc(varsMap, var, registerConstant(var)));
-		}
+//	if(!VARS.isBound())
+//		return;
+//	IPersistentMap varsMap = (IPersistentMap) VARS.deref();
+//	Object id = RT.get(varsMap, var);
+//	if(id == null)
+//		{
+//		VARS.set(RT.assoc(varsMap, var, registerConstant(var)));
+//		}
 //	if(varsMap != null && RT.get(varsMap, var) == null)
 //		VARS.set(RT.assoc(varsMap, var, var));
 }
