@@ -490,21 +490,21 @@ private synchronized static void doInit() {
 			       WARN_ON_REFLECTION, WARN_ON_REFLECTION.deref()
 					,RT.UNCHECKED_MATH, RT.UNCHECKED_MATH.deref()));
 	try {
-		Symbol USER = Symbol.intern("user");
-		Symbol CLOJURE = Symbol.intern("clojure.core");
+            		Symbol USER = Symbol.intern("user");
+                		Symbol CLOJURE = Symbol.intern("clojure.core");
 
-		Var in_ns = var("clojure.core", "in-ns");
-		Var refer = var("clojure.core", "refer");
-		in_ns.invoke(USER);
-		refer.invoke(CLOJURE);
-		maybeLoadResourceScript("user.clj");
+                		Var in_ns = var("clojure.core", "in-ns");
+                		Var refer = var("clojure.core", "refer");
+                		in_ns.invoke(USER);
+                		refer.invoke(CLOJURE);
+                                //		maybeLoadResourceScript("user.clj");
 
 		// start socket servers
-		Var require = var("clojure.core", "require");
-		Symbol SERVER = Symbol.intern("clojure.core.server");
-		require.invoke(SERVER);
-		Var start_servers = var("clojure.core.server", "start-servers");
-		start_servers.invoke(System.getProperties());
+                //		Var require = var("clojure.core", "require");
+                //		Symbol SERVER = Symbol.intern("clojure.core.server");
+                //		require.invoke(SERVER);
+                //		Var start_servers = var("clojure.core.server", "start-servers");
+                //		start_servers.invoke(System.getProperties());
 	}
 	catch(Exception e) {
 		throw Util.sneakyThrow(e);
