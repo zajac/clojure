@@ -25,11 +25,88 @@ transient final AtomicReference<IPersistentMap> aliases = new AtomicReference<IP
 
 final static ConcurrentHashMap<Symbol, Namespace> namespaces = new ConcurrentHashMap<Symbol, Namespace>();
 final static Object lock = new Object();
+public boolean isDynamicallyLinked = false;
 static IPersistentMap lastCore = null;
 static IPersistentMap lastMerge = null;
 
 public String toString(){
 	return name.toString();
+}
+
+public void dynamicallyLinked() {
+	isDynamicallyLinked = true;
+	for (Object mapping : getMappings()) {
+		Object x = ((MapEntry) mapping).val();
+		if (x instanceof Var) {
+			initVar((Var) x);
+		}
+	}
+}
+
+	static final public IPersistentMap CHAR_MAP =
+			PersistentHashMap.create('-', "_",
+//                                       '.', "_DOT_",
+					':', "_COLON_",
+					'+', "_PLUS_",
+					'>', "_GT_",
+					'<', "_LT_",
+					'=', "_EQ_",
+					'~', "_TILDE_",
+					'!', "_BANG_",
+					'@', "_CIRCA_",
+					'#', "_SHARP_",
+					'\'', "_SINGLEQUOTE_",
+					'"', "_DOUBLEQUOTE_",
+					'%', "_PERCENT_",
+					'^', "_CARET_",
+					'&', "_AMPERSAND_",
+					'*', "_STAR_",
+					'|', "_BAR_",
+					'{', "_LBRACE_",
+					'}', "_RBRACE_",
+					'[', "_LBRACK_",
+					']', "_RBRACK_",
+					'/', "_SLASH_",
+					'\\', "_BSLASH_",
+					'?', "_QMARK_");
+
+
+	static public String munge(String name) {
+		StringBuilder sb = new StringBuilder();
+		for (char c : name.toCharArray()) {
+			String sub = (String) CHAR_MAP.valAt(c);
+			if (sub != null)
+				sb.append(sub);
+			else
+				sb.append(c);
+		}
+		return sb.toString();
+	}
+
+	public static String varLoaderClassName(Symbol symbol) {
+		if (symbol.name == null) {
+			return null;
+		}
+		return symbol.ns.replace('-', '_') + "$" + munge(symbol.name);
+	}
+
+
+public static void initVar(Var var) {
+	if (!var.isBound()) {
+		String loaderName = varLoaderClassName(var.toSymbol());
+		if (loaderName != null) {
+			try {
+				Class aClass = RT.classForName(loaderName);
+				if (aClass != null) {
+					Object staticFnInstance = aClass.newInstance();
+					var.bindRoot(staticFnInstance);
+//					var.setMeta((IPersistentMap) ((VarInit) staticFnInstance).varMeta());
+//					var.switchPoint = new SwitchPoint();
+				}
+			} catch (Throwable ignore) {
+			}
+		}
+	}
 }
 
 Namespace(Symbol name){
@@ -67,9 +144,12 @@ public Var intern(Symbol sym){
 		mappings.compareAndSet(map, newMap);
 		map = getMappings();
 		}
-	if(o instanceof Var && ((Var) o).ns == this)
+	if(o instanceof Var && ((Var) o).ns == this) {
+		if (o == v && this.isDynamicallyLinked) {
+			initVar(v);
+		}
 		return (Var) o;
-
+	}
 	if(v == null)
 		v = new Var(this, sym);
 

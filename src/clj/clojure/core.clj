@@ -7896,3 +7896,6 @@ fails, attempts to require sym's namespace and retries."
   [x]
   (force tap-loop)
   (.offer tapq (if (nil? x) ::tap-nil x)))
+
+(defmacro lean-ns []
+  `(.dynamicallyLinked ^clojure.lang.Namespace (clojure.lang.Namespace/findOrCreate (quote ~(.getName *ns*)))))

@@ -434,8 +434,9 @@ static class DefExpr implements Expr{
 	final static Method setDynamicMethod = Method.getMethod("clojure.lang.Var setDynamic(boolean)");
 	final static Method symintern = Method.getMethod("clojure.lang.Symbol intern(String, String)");
 	final static Method internVar = Method.getMethod("clojure.lang.Var refer(clojure.lang.Symbol, clojure.lang.Var)");
+	public final boolean elided;
 
-	public DefExpr(String source, int line, int column, Var var, Expr init, Expr meta, boolean initProvided, boolean isDynamic, boolean shadowsCoreMapping){
+	public DefExpr(String source, int line, int column, Var var, Expr init, Expr meta, boolean initProvided, boolean isDynamic, boolean shadowsCoreMapping, boolean elided){
 		this.source = source;
 		this.line = line;
 		this.column = column;
@@ -445,6 +446,7 @@ static class DefExpr implements Expr{
 		this.isDynamic = isDynamic;
 		this.shadowsCoreMapping = shadowsCoreMapping;
 		this.initProvided = initProvided;
+		this.elided = elided;
 	}
 
     private boolean includesExplicitMetadata(MapExpr expr) {
@@ -491,6 +493,7 @@ static class DefExpr implements Expr{
 	}
 
 	public void emit(C context, ObjExpr objx, GeneratorAdapter gen){
+		if (this.elided) return;
 		objx.emitVar(gen, var, true);
 
 		if (shadowsCoreMapping)
@@ -618,9 +621,17 @@ static class DefExpr implements Expr{
 //					.without(Keyword.intern(null, "static"));
             mm = (IPersistentMap) elideMeta(mm);
 			Expr meta = mm.count()==0 ? null:analyze(context == C.EVAL ? context : C.EXPRESSION, mm);
+			Expr init = analyze(context == C.EVAL ? context : C.EXPRESSION, RT.third(form), v.sym.name);
+			boolean elided =
+					v.ns != null &&
+					v.ns.isDynamicallyLinked &&
+					init instanceof FnExpr && ((FnExpr) init).canBeDirect &&
+					!RT.booleanCast(RT.get(v.meta(), Var.macroKey)) &&
+					!isDynamic &&
+					!shadowsCoreMapping;
 			return new DefExpr((String) SOURCE.deref(), lineDeref(), columnDeref(),
-			                   v, analyze(context == C.EVAL ? context : C.EXPRESSION, RT.third(form), v.sym.name),
-			                   meta, RT.count(form) == 3, isDynamic, shadowsCoreMapping);
+			                   v, init,
+			                   meta, RT.count(form) == 3, isDynamic, shadowsCoreMapping, elided);
 		}
 	}
 }
