@@ -25,7 +25,7 @@ transient final AtomicReference<IPersistentMap> aliases = new AtomicReference<IP
 
 final static ConcurrentHashMap<Symbol, Namespace> namespaces = new ConcurrentHashMap<Symbol, Namespace>();
 final static Object lock = new Object();
-public boolean isDynamicallyLinked = false;
+public volatile boolean isDynamicallyLinked = false;
 static IPersistentMap lastCore = null;
 static IPersistentMap lastMerge = null;
 
@@ -34,13 +34,13 @@ public String toString(){
 }
 
 public void dynamicallyLinked() {
-	isDynamicallyLinked = true;
-	for (Object mapping : getMappings()) {
-		Object x = ((MapEntry) mapping).val();
-		if (x instanceof Var && ((Var) x).ns == this) {
-			initVar((Var) x);
-		}
-	}
+    isDynamicallyLinked = true;
+    for (Object mapping : getMappings()) {
+        Object x = ((MapEntry) mapping).val();
+        if (x instanceof Var && ((Var) x).ns == this && !((Var)x).isBound()) {
+            initVar((Var) x);
+        }
+    }
 }
 
 	static final public IPersistentMap CHAR_MAP =
@@ -138,20 +138,21 @@ public Var intern(Symbol sym){
 	Var v = null;
 	while((o = map.valAt(sym)) == null)
 		{
-		if(v == null)
-			v = new Var(this, sym);
+                if(v == null) {
+                    v = new Var(this, sym);
+                    if (this.isDynamicallyLinked) {
+                        initVar(v);
+                    }
+                }
 		IPersistentMap newMap = map.assoc(sym, v);
 		mappings.compareAndSet(map, newMap);
 		map = getMappings();
 		}
 	if(o instanceof Var && ((Var) o).ns == this) {
-		if (o == v && this.isDynamicallyLinked) {
-			initVar(v);
-		}
-		return (Var) o;
+            return (Var) o;
 	}
 	if(v == null)
-		v = new Var(this, sym);
+            v = new Var(this, sym);
 
 	warnOrFailOnReplace(sym, o, v);
 
@@ -321,10 +322,13 @@ public Object getMapping(Symbol name){
 }
 
 public Var findInternedVar(Symbol symbol){
-	Object o = mappings.get().valAt(symbol);
-	if(o != null && o instanceof Var && ((Var) o).ns == this)
-		return (Var) o;
-	return null;
+    if (this.isDynamicallyLinked) {
+        return this.intern(symbol);
+    }
+    Object o = mappings.get().valAt(symbol);
+    if(o != null && o instanceof Var && ((Var) o).ns == this)
+        return (Var) o;
+    return null;
 }
 
 
