@@ -5814,9 +5814,12 @@
             (list* `gen-class :name (.replace (str name) \- \_) :impl-ns name :main true (next gen-class-clause)))
         references (remove #(= :gen-class (first %)) references)
         ;ns-effect (clojure.core/in-ns name)
-        name-metadata (meta name)]
+        name-metadata (meta name)
+        lean-ns? (:lean-ns name-metadata)]
     `(do
        (clojure.core/in-ns '~name)
+      ~@(when lean-ns?
+           `((.dynamicallyLinked (clojure.lang.Namespace/find '~name))))
        ~@(when name-metadata
            `((.resetMeta (clojure.lang.Namespace/find '~name) ~name-metadata)))
        (with-loading-context
@@ -7900,5 +7903,3 @@ fails, attempts to require sym's namespace and retries."
   (force tap-loop)
   (.offer tapq (if (nil? x) ::tap-nil x)))
 
-(defmacro lean-ns []
-  `(.dynamicallyLinked ^clojure.lang.Namespace (clojure.lang.Namespace/findOrCreate (quote ~(.getName *ns*)))))
