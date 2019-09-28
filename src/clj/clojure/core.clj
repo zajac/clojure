@@ -2439,8 +2439,10 @@
   {:added "1.0"
    :static true}
 
-  [^clojure.lang.Ref ref fun & args]
-    (. ref (commute fun args)))
+  [ ref fun & args]
+  (if (instance? clojure.lang.Atom ref)
+    (apply swap! ref fun args)
+    (. ^clojure.lang.Ref ref (commute fun args))))
 
 (defn alter
   "Must be called in a transaction. Sets the in-transaction-value of
@@ -5759,7 +5761,8 @@
 (declare gen-class)
 
 (defmacro with-loading-context [& body]
-  `((fn loading# [] 
+  `(do ~@body)
+  #_`((fn loading# []
         (. clojure.lang.Var (pushThreadBindings {clojure.lang.Compiler/LOADER  
                                                  (.getClassLoader (.getClass ^Object loading#))}))
         (try
@@ -5823,7 +5826,7 @@
         ~@(map process-reference references))
         (if (.equals '~name 'clojure.core) 
           nil
-          (do (dosync (commute @#'*loaded-libs* conj '~name)) nil)))))
+          (do (swap! @#'*loaded-libs* conj '~name) nil)))))
 
 (defmacro refer-clojure
   "Same as (refer 'clojure.core <filters>)"
@@ -5845,7 +5848,7 @@
 (defonce ^:dynamic
   ^{:private true
      :doc "A ref to a sorted set of symbols representing loaded libs"}
-  *loaded-libs* (ref (sorted-set)))
+  *loaded-libs* (atom (sorted-set)))
 
 (defonce ^:dynamic
   ^{:private true
@@ -5916,8 +5919,7 @@
             "namespace '%s' not found after loading '%s'"
             lib (root-resource lib))
   (when require
-    (dosync
-     (commute *loaded-libs* conj lib))))
+    (swap! *loaded-libs* conj lib)))
 
 (defn- load-all
   "Loads a lib given its name and forces a load of any libs it directly or
@@ -5925,11 +5927,12 @@
   exists after loading. If require, records the load so any duplicate loads
   can be skipped."
   [lib need-ns require]
-  (dosync
-   (commute *loaded-libs* #(reduce1 conj %1 %2)
-            (binding [*loaded-libs* (ref (sorted-set))]
-           (load-one lib need-ns require)
-              @*loaded-libs*))))
+  (let [loaded-libs' (binding [*loaded-libs* (atom (sorted-set))]
+                       (load-one lib need-ns require)
+                       @*loaded-libs*)]
+
+  (swap! *loaded-libs* (fn [libs]
+                         (reduce1 conj libs loaded-libs')))))
 
 (defn- load-lib
   "Loads a lib with options"
