@@ -37,7 +37,7 @@ public void dynamicallyLinked() {
 	isDynamicallyLinked = true;
 	for (Object mapping : getMappings()) {
 		Object x = ((MapEntry) mapping).val();
-		if (x instanceof Var) {
+		if (x instanceof Var && ((Var) x).ns == this) {
 			initVar((Var) x);
 		}
 	}
