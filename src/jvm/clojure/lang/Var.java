@@ -175,7 +175,7 @@ public static Var create(Object root){
 	return new Var(null, null, root);
 }
 
-public Var(Namespace ns, Symbol sym){
+Var(Namespace ns, Symbol sym){
 	this.ns = ns;
 	this.sym = sym;
 	this.threadBound = false; //new AtomicBoolean(false);
