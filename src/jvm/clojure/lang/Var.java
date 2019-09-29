@@ -293,12 +293,15 @@ final public boolean hasRoot(){
 
 //binding root always clears macro flag
 synchronized public void bindRoot(Object root){
-	validate(getValidator(), root);
-	Object oldroot = this.root();
-	this._root = root;
-	++rev;
+    validate(getValidator(), root);
+    Object oldroot = this.root();
+    if (!(oldroot instanceof Unbound)) {
+        SwitchPoint.invalidateAll(new SwitchPoint[]{this.switchPoint});
+    }
+    this._root = root;
+    ++rev;
     alterMeta(dissoc, RT.list(macroKey));
-	if(watches.count() > 0)
+    if(watches.count() > 0)
         notifyWatches(oldroot,root());
 }
 
@@ -308,10 +311,14 @@ synchronized public void initLazyRoot(FnLoaderThunk loader){
 	if(getValidator() != null || watches.count() > 0)
 		bindRoot(loader.load());
 	else{
-		this._root = this;
-		this.lazyLoader = loader;
-		++rev;
-        alterMeta(dissoc, RT.list(macroKey));
+            Object oldroot = this._root;
+            this._root = this;
+            this.lazyLoader = loader;
+            ++rev;
+            alterMeta(dissoc, RT.list(macroKey));
+            if (!(oldroot instanceof Unbound)) {
+                SwitchPoint.invalidateAll(new SwitchPoint[]{this.switchPoint});
+            }
 	}
 }
 
