@@ -4047,7 +4047,9 @@ static public class FnExpr extends ObjExpr{
 
 		if(RT.second(form) instanceof Symbol) {
 			nm = (Symbol) RT.second(form);
-			name = nm.name + "__" + RT.nextID();
+			if (name == null || enclosingMethod != null) {
+				name = nm.name + "__" + RT.nextID();
+			}
 		} else {
 			if(name == null)
 				name = "fn__" + RT.nextID();
@@ -5272,13 +5274,16 @@ static public class ObjExpr implements Expr{
 	}
 
 	public void emitVar(GeneratorAdapter gen, Var var, boolean forDef){
-            gen.invokeDynamic(
-                              "acquire",
-                              ACQUIRE_SIGANTURE,
-                              BOOTSTRAP_ACQUIRE_HANDLE,
-                              var.toSymbol().getNamespace(),
-                              var.toSymbol().getName());
-            
+		if (forDef) {
+			emitValue(var, gen);
+		} else {
+			gen.invokeDynamic(
+				"acquire",
+				ACQUIRE_SIGANTURE,
+				BOOTSTRAP_ACQUIRE_HANDLE,
+				var.toSymbol().getNamespace(),
+				var.toSymbol().getName());
+		}
             //gen.getStatic(fntype, munge(var.sym.toString()), VAR_TYPE);
 	}
 

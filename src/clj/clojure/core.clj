@@ -7,8 +7,10 @@
 ;   You must not remove this notice, or any other, from this software.
 
 (ns ^{:doc "The core Clojure language."
-       :author "Rich Hickey"}
+      :author "Rich Hickey"}
   clojure.core)
+
+;;(.dynamicallyLinked (clojure.lang.Namespace/find 'clojure.core))
 
 ;;(set! *warn-on-reflection* true)
 
@@ -5816,6 +5818,10 @@
         ;ns-effect (clojure.core/in-ns name)
         name-metadata (meta name)
         lean-ns? (:lean-ns name-metadata)]
+    (when (and (not= name 'clojure.core)
+               (not-any? #(= :refer-clojure (first %)) references))
+      (clojure.core/in-ns name)
+      (refer 'clojure.core))
     `(do
        (clojure.core/in-ns '~name)
       ~@(when lean-ns?
@@ -5824,8 +5830,8 @@
            `((.resetMeta (clojure.lang.Namespace/find '~name) ~name-metadata)))
        (with-loading-context
         ~@(when gen-class-call (list gen-class-call))
-        ~@(when (and (not= name 'clojure.core) (not-any? #(= :refer-clojure (first %)) references))
-            `((clojure.core/refer '~'clojure.core)))
+;;        ~@(when (and (not= name 'clojure.core) (not-any? #(= :refer-clojure (first %)) references))
+;;            `((clojure.core/refer '~'clojure.core)))
         ~@(map process-reference references))
         (if (.equals '~name 'clojure.core) 
           nil
