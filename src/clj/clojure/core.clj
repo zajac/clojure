@@ -10,7 +10,7 @@
       :author "Rich Hickey"}
   clojure.core)
 
-;;(.dynamicallyLinked (clojure.lang.Namespace/find 'clojure.core))
+#_(.dynamicallyLinked (clojure.lang.Namespace/find 'clojure.core))
 
 ;;(set! *warn-on-reflection* true)
 
@@ -5772,6 +5772,36 @@
          (finally
           (. clojure.lang.Var (popThreadBindings)))))))
 
+(defn- libspec?
+  "Returns true if x is a libspec"
+  [x]
+  (or (symbol? x)
+      (and (vector? x)
+           (or
+            (nil? (second x))
+            (keyword? (second x))))))
+
+(defn lib-namespaces [& args]
+  (let [prefix-sym (fn [prefix sym]
+                     (if (nil? prefix)
+                       sym
+                       (symbol (str (name prefix)  "." (name sym)))))
+        libspec-sym (fn[prefix spec]
+                      (if (symbol? spec)
+                        (prefix-sym prefix spec)
+                        (let [[ns-sym] spec]
+                          (prefix-sym prefix ns-sym))))]
+    (mapcat (fn [arg]
+              (if (libspec? arg)
+                [(libspec-sym nil arg)]
+                (let [[prefix & specs] arg]
+                  (map (fn [spec] (libspec-sym prefix spec)) specs)))) args)))
+
+(defn init-class-name [lib-sym]
+  (.concat (.replace (name lib-sym) \- \_) "__init"))
+
+(def ^:redef ^:declared require)
+
 (defmacro ns
   "Sets *ns* to the namespace named by name (unevaluated), creating it
   if needed.  references can be zero or more of: (:refer-clojure ...)
@@ -5814,14 +5844,18 @@
         gen-class-call
           (when gen-class-clause
             (list* `gen-class :name (.replace (str name) \- \_) :impl-ns name :main true (next gen-class-clause)))
-        references (remove #(= :gen-class (first %)) references)
+        requires (filter #(= :require (first %)) references)
+        references (remove #( #{:require :gen-class} (first %)) references)
         ;ns-effect (clojure.core/in-ns name)
         name-metadata (meta name)
         lean-ns? (:lean-ns name-metadata)]
+    (clojure.core/in-ns name)
     (when (and (not= name 'clojure.core)
                (not-any? #(= :refer-clojure (first %)) references))
-      (clojure.core/in-ns name)
       (refer 'clojure.core))
+    (doseq [[_ & args] requires]
+      (apply require args))
+
     `(do
        (clojure.core/in-ns '~name)
       ~@(when lean-ns?
@@ -5833,9 +5867,16 @@
 ;;        ~@(when (and (not= name 'clojure.core) (not-any? #(= :refer-clojure (first %)) references))
 ;;            `((clojure.core/refer '~'clojure.core)))
         ~@(map process-reference references))
-        (if (.equals '~name 'clojure.core) 
-          nil
-          (do (swap! @#'*loaded-libs* conj '~name) nil)))))
+      ~@(when *compile-files*
+         `((when-not ~'*compile-files*
+             ~@(mapcat (fn [[_ & stuff]]
+                         (->> (apply lib-namespaces stuff)
+                              (map init-class-name)
+                              (map (fn [class-name]
+                                     `(clojure.lang.RT/classForName ~class-name))))) requires))))
+        ~@(when-not (= name 'clojure.core)
+           `((swap! @#'*loaded-libs* conj '~name)))
+      nil)))
 
 (defmacro refer-clojure
   "Same as (refer 'clojure.core <filters>)"
@@ -5884,15 +5925,6 @@
               (.deref clojure.lang.Compiler/LINE)
               (.deref clojure.lang.Compiler/COLUMN)
               exception)))))
-
-(defn- libspec?
-  "Returns true if x is a libspec"
-  [x]
-  (or (symbol? x)
-      (and (vector? x)
-           (or
-            (nil? (second x))
-            (keyword? (second x))))))
 
 (defn- prependss
   "Prepends a symbol or a seq to coll"
