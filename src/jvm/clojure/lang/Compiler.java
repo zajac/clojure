@@ -1862,7 +1862,8 @@ static class StaticMethodExpr extends MethodExpr{
 				{
 				Type type = Type.getType(c);
 				Method m = new Method(methodName, Type.getReturnType(method), Type.getArgumentTypes(method));
-				gen.invokeStatic(type, m);
+				gen.visitMethodInsn(INVOKESTATIC, type.getInternalName(), methodName, m.getDescriptor(), c.isInterface());
+				//gen.invokeStatic(type, m);
 				}
 			}
 		else
