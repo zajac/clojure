@@ -8,3 +8,6 @@ maven-classpath
 maven-classpath.properties
 .idea/
 *.iml
+.classpath
+.project
+.settings
